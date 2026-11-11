@@ -8,10 +8,10 @@ from google import genai
 from moviepy import VideoFileClip, AudioFileClip
 
 # 1. Load Environment Secrets
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-PEXELS_API_KEY = os.environ["PEXELS_API_KEY"]
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+GEMINI_API_KEY = os.environ["GEMINI_API_KEY"].strip()
+PEXELS_API_KEY = os.environ["PEXELS_API_KEY"].strip()
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 
 print("1. Generating script with Gemini...")
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -21,8 +21,7 @@ prompt = (
     "'keyword' must be one single word describing the background visual (e.g., galaxy, computer, robot, ocean)."
 )
 
-# Models to attempt with fallback support
-models_to_try = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash"]
+models_to_try = ["gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
 response = None
 
 for model_name in models_to_try:
@@ -37,11 +36,11 @@ for model_name in models_to_try:
             print(f"Success with {model_name}!")
             break
     except Exception as e:
-        print(f"Model {model_name} busy or unavailable: {e}. Retrying with next...")
+        print(f"Model {model_name} busy or unavailable: {e}. Retrying next...")
         time.sleep(2)
 
 if not response or not response.text:
-    raise RuntimeError("Failed to generate content from Gemini after trying all fallback models.")
+    raise RuntimeError("Failed to generate content from Gemini after trying fallback models.")
 
 # Clean JSON parsing
 clean_text = response.text.strip()
@@ -98,23 +97,21 @@ final_video = video_clip.with_audio(audio_clip)
 
 final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24)
 
-# Free resources
 audio_clip.close()
 video_clip.close()
 final_video.close()
 
 print("5. Sending video preview to Telegram...")
 tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-caption_text = f"🎬 *{title}*\n\n📝 _{voiceover}_"
+caption_text = f"🎬 {title}\n\n📝 {voiceover}"
 
 with open("final.mp4", "rb") as video_file:
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "caption": caption_text,
-        "parse_mode": "Markdown"
+        "caption": caption_text[:1024]
     }
     r = requests.post(tg_url, data=payload, files={"video": video_file})
     print(f"Telegram status: {r.status_code}")
+    print(f"Telegram response: {r.text}")
 
-print("Done! Video successfully sent to Telegram.")
-        
+print("Execution completed.")
