@@ -21,26 +21,30 @@ prompt = (
     "'keyword' must be one single word describing the background visual (e.g., galaxy, computer, robot, ocean)."
 )
 
-models_to_try = ["gemini-2.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]
+# Active supported models with automatic retry
+models_to_try = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-3.6-flash"]
 response = None
 
 for model_name in models_to_try:
-    try:
-        print(f"Trying model: {model_name}...")
-        response = client.models.generate_content(
-            model=model_name,
-            contents=prompt,
-            config={"response_mime_type": "application/json"}
-        )
-        if response and response.text:
-            print(f"Success with {model_name}!")
-            break
-    except Exception as e:
-        print(f"Model {model_name} busy or unavailable: {e}. Retrying next...")
-        time.sleep(2)
+    for attempt in range(2):
+        try:
+            print(f"Trying model: {model_name} (attempt {attempt + 1})...")
+            response = client.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config={"response_mime_type": "application/json"}
+            )
+            if response and response.text:
+                print(f"Success with {model_name}!")
+                break
+        except Exception as e:
+            print(f"Model {model_name} error: {e}. Retrying in 3 seconds...")
+            time.sleep(3)
+    if response and response.text:
+        break
 
 if not response or not response.text:
-    raise RuntimeError("Failed to generate content from Gemini after trying fallback models.")
+    raise RuntimeError("Failed to generate content after trying supported models.")
 
 # Clean JSON parsing
 clean_text = response.text.strip()
@@ -115,3 +119,4 @@ with open("final.mp4", "rb") as video_file:
     print(f"Telegram response: {r.text}")
 
 print("Execution completed.")
+                       
