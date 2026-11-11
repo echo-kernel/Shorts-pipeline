@@ -1,7 +1,7 @@
 name: Make Short and Send Telegram
 
 on:
-  workflow_dispatch: # Allows manual button press on mobile
+  workflow_dispatch:
 
 jobs:
   build:
@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: setup-python@v5
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
