@@ -16,7 +16,6 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 print("1. Generating script...")
 
-# Fallback facts in case Google Cloud servers are under heavy load (503)
 FALLBACK_FACTS = [
     {
         "title": "A Day on Venus is Longer Than Its Year",
@@ -68,12 +67,76 @@ for model_name in models_to_try:
             print(f"Success with {model_name}!")
             break
     except Exception as e:
-        print(f"Model {model_name} busy or unavailable. Trying next...")
+        print(f"Model {model_name} busy. Trying next...")
         time.sleep(1)
 
-# If Google API is under a 503 spike, pick from the backup library
 if not data:
     print("Google API busy; using curated high-engagement script backup.")
     data = random.choice(FALLBACK_FACTS)
 
-title = data.get("
+title = data.get("title", "Amazing Science Fact")
+voiceover = data.get("voiceover", "")
+keyword = data.get("keyword", "technology")
+
+print(f"Title: {title}")
+print(f"Keyword: {keyword}")
+
+print("2. Generating neural voiceover...")
+async def generate_voice():
+    communicate = edge_tts.Communicate(voiceover, "en-US-ChristopherNeural")
+    await communicate.save("audio.mp3")
+
+asyncio.run(generate_voice())
+
+print("3. Fetching vertical video from Pexels...")
+headers = {"Authorization": PEXELS_API_KEY}
+pexels_url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=5"
+res = requests.get(pexels_url, headers=headers).json()
+
+download_url = None
+for video in res.get("videos", []):
+    for f in video.get("video_files", []):
+        if f.get("width") and f.get("height") and f["height"] > f["width"]:
+            download_url = f["link"]
+            break
+    if download_url:
+        break
+
+if not download_url and res.get("videos"):
+    download_url = res["videos"][0]["video_files"][0]["link"]
+
+if not download_url:
+    download_url = "https://images.pexels.com/videos/854671/free-video-854671.mp4"
+
+with open("raw_video.mp4", "wb") as f:
+    f.write(requests.get(download_url).content)
+
+print("4. Stitching video with MoviePy & FFmpeg...")
+audio_clip = AudioFileClip("audio.mp3")
+video_clip = VideoFileClip("raw_video.mp4")
+
+target_duration = audio_clip.duration
+video_clip = video_clip.subclipped(0, min(video_clip.duration, target_duration))
+final_video = video_clip.with_audio(audio_clip)
+
+final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24)
+
+audio_clip.close()
+video_clip.close()
+final_video.close()
+
+print("5. Sending video preview to Telegram...")
+tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
+caption_text = f"🎬 {title}\n\n📝 {voiceover}"
+
+with open("final.mp4", "rb") as video_file:
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "caption": caption_text[:1024]
+    }
+    r = requests.post(tg_url, data=payload, files={"video": video_file})
+    print(f"Telegram status: {r.status_code}")
+    print(f"Telegram response: {r.text}")
+
+print("Execution completed successfully.")
+        
