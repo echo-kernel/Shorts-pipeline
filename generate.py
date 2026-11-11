@@ -1,12 +1,13 @@
 import os
 import json
+import time
 import asyncio
 import requests
 import edge_tts
 from google import genai
 from moviepy import VideoFileClip, AudioFileClip
 
-# Read keys from GitHub secrets
+# 1. Load Environment Secrets
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 PEXELS_API_KEY = os.environ["PEXELS_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -20,12 +21,36 @@ prompt = (
     "'keyword' must be one single word describing the background visual (e.g., galaxy, computer, robot, ocean)."
 )
 
-response = client.models.generate_content(
-    model="gemini-3.8-flash",
-    contents=prompt,
-    config={"response_mime_type": "application/json"}
-)
-data = json.loads(response.text)
+# Models to attempt with fallback support
+models_to_try = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash"]
+response = None
+
+for model_name in models_to_try:
+    try:
+        print(f"Trying model: {model_name}...")
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config={"response_mime_type": "application/json"}
+        )
+        if response and response.text:
+            print(f"Success with {model_name}!")
+            break
+    except Exception as e:
+        print(f"Model {model_name} busy or unavailable: {e}. Retrying with next...")
+        time.sleep(2)
+
+if not response or not response.text:
+    raise RuntimeError("Failed to generate content from Gemini after trying all fallback models.")
+
+# Clean JSON parsing
+clean_text = response.text.strip()
+if clean_text.startswith("```json"):
+    clean_text = clean_text[7:]
+if clean_text.endswith("```"):
+    clean_text = clean_text[:-3]
+
+data = json.loads(clean_text)
 title = data.get("title", "Daily Short Fact")
 voiceover = data.get("voiceover", "")
 keyword = data.get("keyword", "technology")
@@ -45,7 +70,6 @@ headers = {"Authorization": PEXELS_API_KEY}
 pexels_url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=5"
 res = requests.get(pexels_url, headers=headers).json()
 
-# Grab the first valid vertical download link
 download_url = None
 for video in res.get("videos", []):
     for f in video.get("video_files", []):
@@ -58,23 +82,23 @@ for video in res.get("videos", []):
 if not download_url and res.get("videos"):
     download_url = res["videos"][0]["video_files"][0]["link"]
 
+if not download_url:
+    raise RuntimeError(f"No video found on Pexels for keyword: {keyword}")
+
 with open("raw_video.mp4", "wb") as f:
     f.write(requests.get(download_url).content)
 
-print("4. Stitched video with MoviePy & FFmpeg...")
+print("4. Stitching video with MoviePy & FFmpeg...")
 audio_clip = AudioFileClip("audio.mp3")
 video_clip = VideoFileClip("raw_video.mp4")
 
-# Trim or loop video to match voice length
 target_duration = audio_clip.duration
-if video_clip.duration < target_duration:
-    video_clip = video_clip.with_effects([])  # Keep native duration
 video_clip = video_clip.subclipped(0, min(video_clip.duration, target_duration))
 final_video = video_clip.with_audio(audio_clip)
 
 final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24)
 
-# Close clips to free memory
+# Free resources
 audio_clip.close()
 video_clip.close()
 final_video.close()
@@ -93,3 +117,4 @@ with open("final.mp4", "rb") as video_file:
     print(f"Telegram status: {r.status_code}")
 
 print("Done! Video successfully sent to Telegram.")
+        
