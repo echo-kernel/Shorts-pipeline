@@ -3,46 +3,40 @@ import json
 import time
 import random
 import asyncio
+import subprocess
 import requests
 import edge_tts
 from google import genai
 from moviepy import VideoFileClip, AudioFileClip
 
-# 1. Load Environment Secrets
+# 1. Load Secrets
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
-print("1. Generating script...")
-
 FALLBACK_FACTS = [
     {
         "title": "A Day on Venus is Longer Than Its Year",
-        "voiceover": "Did you know that Venus spins so slowly that a single day on Venus lasts longer than its entire year around the Sun?",
+        "voiceover": "Venus spins so slowly that one single day on Venus lasts longer than its entire year around the Sun.",
         "keyword": "space"
     },
     {
         "title": "The Quantum Computer Superpower",
-        "voiceover": "Quantum computers can perform calculations in seconds that would take the fastest modern supercomputers thousands of years.",
+        "voiceover": "Quantum computers can calculate in seconds what would take modern supercomputers thousands of years.",
         "keyword": "computer"
     },
     {
         "title": "Neutron Stars Are Incredibly Dense",
-        "voiceover": "Neutron stars are so dense that just a single sugar cube of their material would weigh about one billion tons on Earth.",
+        "voiceover": "A single sugar cube of a neutron star would weigh about one billion tons on Earth.",
         "keyword": "galaxy"
-    },
-    {
-        "title": "Ocean Depths Are Unexplored",
-        "voiceover": "More than eighty percent of Earth's oceans remain unmapped and unexplored, holding mysteries we have yet to discover.",
-        "keyword": "ocean"
     }
 ]
 
 prompt = (
-    "Create a compelling, punchy 15-second tech, astronomy, or science fact for a YouTube Short. "
+    "Create a punchy 10-15 second mindblowing tech, physics, or science fact for YouTube Shorts. "
     "Return strictly JSON with keys: 'title', 'voiceover', and 'keyword'. "
-    "'keyword' must be one single word describing the background visual (e.g., galaxy, computer, robot, ocean)."
+    "'keyword' must be one visual noun (e.g., galaxy, robotics, technology, ocean)."
 )
 
 client = genai.Client(api_key=GEMINI_API_KEY)
@@ -51,7 +45,6 @@ data = None
 
 for model_name in models_to_try:
     try:
-        print(f"Trying model: {model_name}...")
         response = client.models.generate_content(
             model=model_name,
             contents=prompt,
@@ -64,33 +57,30 @@ for model_name in models_to_try:
             if clean_text.endswith("```"):
                 clean_text = clean_text[:-3]
             data = json.loads(clean_text)
-            print(f"Success with {model_name}!")
             break
-    except Exception as e:
-        print(f"Model {model_name} busy. Trying next...")
+    except Exception:
         time.sleep(1)
 
 if not data:
-    print("Google API busy; using curated high-engagement script backup.")
     data = random.choice(FALLBACK_FACTS)
 
 title = data.get("title", "Amazing Science Fact")
 voiceover = data.get("voiceover", "")
-keyword = data.get("keyword", "technology")
+keyword = data.get("keyword", "space")
 
 print(f"Title: {title}")
-print(f"Keyword: {keyword}")
+print(f"Voiceover: {voiceover}")
 
-print("2. Generating neural voiceover...")
+# 2. TTS Voiceover
 async def generate_voice():
-    communicate = edge_tts.Communicate(voiceover, "en-US-ChristopherNeural")
+    communicate = edge_tts.Communicate(voiceover, "en-US-ChristopherNeural", rate="+10%")
     await communicate.save("audio.mp3")
 
 asyncio.run(generate_voice())
 
-print("3. Fetching vertical video from Pexels...")
+# 3. Pexels HD Portrait Footage
 headers = {"Authorization": PEXELS_API_KEY}
-pexels_url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=5"
+pexels_url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=10"
 res = requests.get(pexels_url, headers=headers).json()
 
 download_url = None
@@ -102,32 +92,46 @@ for video in res.get("videos", []):
     if download_url:
         break
 
-if not download_url and res.get("videos"):
-    download_url = res["videos"][0]["video_files"][0]["link"]
-
 if not download_url:
     download_url = "https://images.pexels.com/videos/854671/free-video-854671.mp4"
 
 with open("raw_video.mp4", "wb") as f:
     f.write(requests.get(download_url).content)
 
-print("4. Stitching video with MoviePy & FFmpeg...")
+# 4. Trim and scale to crisp 1080x1920 9:16
 audio_clip = AudioFileClip("audio.mp3")
-video_clip = VideoFileClip("raw_video.mp4")
+raw_clip = VideoFileClip("raw_video.mp4")
 
-target_duration = audio_clip.duration
-video_clip = video_clip.subclipped(0, min(video_clip.duration, target_duration))
-final_video = video_clip.with_audio(audio_clip)
+duration = audio_clip.duration
+raw_clip = raw_clip.subclipped(0, min(raw_clip.duration, duration))
+raw_clip = raw_clip.with_audio(audio_clip)
+raw_clip.write_videofile("temp_stitched.mp4", codec="libx264", audio_codec="aac", fps=24)
 
-final_video.write_videofile("final.mp4", codec="libx264", audio_codec="aac", fps=24)
-
+raw_clip.close()
 audio_clip.close()
-video_clip.close()
-final_video.close()
 
-print("5. Sending video preview to Telegram...")
+# 5. Burn high-contrast bold centered captions using FFmpeg
+words = voiceover.replace("'", "").split()
+chunk_size = 4
+formatted_lines = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+caption_display = "\\n".join(formatted_lines[:3])
+
+ffmpeg_cmd = [
+    "ffmpeg", "-y", "-i", "temp_stitched.mp4",
+    "-vf", (
+        f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
+        f"text='{caption_display}':fontcolor=yellow:fontsize=52:line_spacing=24:"
+        f"borderw=6:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2"
+    ),
+    "-c:v", "libx264", "-c:a", "copy", "final.mp4"
+]
+
+subprocess.run(ffmpeg_cmd, check=True)
+
+# 6. Send to Telegram
 tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-caption_text = f"🎬 {title}\n\n📝 {voiceover}"
+caption_text = f"🔥 {title}\n\n🎙️ {voiceover}"
 
 with open("final.mp4", "rb") as video_file:
     payload = {
@@ -136,7 +140,6 @@ with open("final.mp4", "rb") as video_file:
     }
     r = requests.post(tg_url, data=payload, files={"video": video_file})
     print(f"Telegram status: {r.status_code}")
-    print(f"Telegram response: {r.text}")
 
-print("Execution completed successfully.")
+print("Shorts generation complete.")
         
