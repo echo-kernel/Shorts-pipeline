@@ -14,13 +14,15 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install System FFmpeg & Fonts
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Install Blender, FFmpeg & Fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender ffmpeg fonts-dejavu-core
 
       - name: Install Python Packages
         run: pip install google-genai edge-tts moviepy requests
 
-      - name: Run Video Pipeline
+      - name: Run 3D Video Pipeline
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
