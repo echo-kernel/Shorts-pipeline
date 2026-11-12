@@ -11,36 +11,32 @@ from moviepy import VideoFileClip, AudioFileClip
 
 # 1. Load Secrets
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 
 FALLBACK_FACTS = [
     {
+        "title": "Why Prince Rupert Drops Defy Physics",
+        "voiceover": "Hit a Prince Rupert drop with a hydraulic press and it will shatter the steel instead. Shoot it with a bullet and the bullet explodes on impact. Yet snap its tiny glass tail with your fingers and the entire drop disintegrates instantly."
+    },
+    {
         "title": "A Day on Venus is Longer Than Its Year",
-        "voiceover": "Venus spins so slowly that one single day on Venus lasts longer than its entire year around the Sun.",
-        "keyword": "space"
+        "voiceover": "Venus spins so slowly on its axis that a single day on Venus lasts longer than an entire year orbiting around the Sun."
     },
     {
-        "title": "The Quantum Computer Superpower",
-        "voiceover": "Quantum computers can calculate in seconds what would take modern supercomputers thousands of years.",
-        "keyword": "computer"
-    },
-    {
-        "title": "Neutron Stars Are Incredibly Dense",
-        "voiceover": "A single sugar cube of a neutron star would weigh about one billion tons on Earth.",
-        "keyword": "galaxy"
+        "title": "The Weight of a Neutron Star",
+        "voiceover": "Neutron stars are collapsed stellar cores so dense that just one sugar cube of their material would weigh a billion tons on Earth."
     }
 ]
 
 prompt = (
-    "Create a punchy 10-15 second mindblowing tech, physics, or science fact for YouTube Shorts. "
-    "Return strictly JSON with keys: 'title', 'voiceover', and 'keyword'. "
-    "'keyword' must be one visual noun (e.g., galaxy, robotics, technology, ocean)."
+    "Create a punchy 14-16 second mindblowing physics, astronomy, or science fact for YouTube Shorts. "
+    "Use clean, natural English sentences without weird symbols. "
+    "Return strictly JSON with keys: 'title' and 'voiceover'."
 )
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-models_to_try = ["gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-3.5-flash-lite", "gemini-3.8-flash"]
+models_to_try = ["gemini-3.5-flash-lite", "gemini-3.8-flash", "gemini-2.5-flash"]
 data = None
 
 for model_name in models_to_try:
@@ -64,74 +60,74 @@ for model_name in models_to_try:
 if not data:
     data = random.choice(FALLBACK_FACTS)
 
-title = data.get("title", "Amazing Science Fact")
-voiceover = data.get("voiceover", "")
-keyword = data.get("keyword", "space")
+title = data.get("title", "Physics Fact")
+voiceover = data.get("voiceover", "").strip()
 
 print(f"Title: {title}")
 print(f"Voiceover: {voiceover}")
 
-# 2. TTS Voiceover
+# 2. Generate Neural Voiceover
 async def generate_voice():
     communicate = edge_tts.Communicate(voiceover, "en-US-ChristopherNeural", rate="+10%")
     await communicate.save("audio.mp3")
 
 asyncio.run(generate_voice())
 
-# 3. Pexels HD Portrait Footage
-headers = {"Authorization": PEXELS_API_KEY}
-pexels_url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&per_page=10"
-res = requests.get(pexels_url, headers=headers).json()
-
-download_url = None
-for video in res.get("videos", []):
-    for f in video.get("video_files", []):
-        if f.get("width") and f.get("height") and f["height"] > f["width"]:
-            download_url = f["link"]
-            break
-    if download_url:
-        break
-
-if not download_url:
-    download_url = "https://images.pexels.com/videos/854671/free-video-854671.mp4"
-
-with open("raw_video.mp4", "wb") as f:
-    f.write(requests.get(download_url).content)
-
-# 4. Trim and scale to crisp 1080x1920 9:16
 audio_clip = AudioFileClip("audio.mp3")
-raw_clip = VideoFileClip("raw_video.mp4")
+duration = round(audio_clip.duration, 2)
+audio_clip.close()
+print(f"Audio duration: {duration} seconds")
 
-duration = audio_clip.duration
-raw_clip = raw_clip.subclipped(0, min(raw_clip.duration, duration))
-raw_clip = raw_clip.with_audio(audio_clip)
-raw_clip.write_videofile("temp_stitched.mp4", codec="libx264", audio_codec="aac", fps=24)
+# 3. Create Dynamic Timed SRT Subtitles (3 words per popup so nothing gets cut off)
+def format_srt_time(seconds):
+    hrs = int(seconds // 3600)
+    mins = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millis = int((seconds - int(seconds)) * 1000)
+    return f"{hrs:02}:{mins:02}:{secs:02},{millis:03}"
 
-raw_clip.close()
+words = voiceover.split()
+chunk_size = 3
+chunks = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
+time_per_chunk = duration / max(1, len(chunks))
+
+with open("subs.srt", "w", encoding="utf-8") as srt_file:
+    for idx, chunk in enumerate(chunks):
+        start_t = idx * time_per_chunk
+        end_t = (idx + 1) * time_per_chunk
+        srt_file.write(f"{idx + 1}\n")
+        srt_file.write(f"{format_srt_time(start_t)} --> {format_srt_time(end_t)}\n")
+        srt_file.write(f"{chunk.upper()}\n\n")
+
+# 4. Render Full 3D Animation via Headless Blender
+print("Executing Blender 3D engine...")
+subprocess.run(["blender", "-b", "-P", "render_3d.py", "--", str(duration)], check=True)
+
+# 5. Merge Audio + 3D Video
+video_clip = VideoFileClip("blender_3d_render.mp4")
+audio_clip = AudioFileClip("audio.mp3")
+video_clip = video_clip.subclipped(0, min(video_clip.duration, audio_clip.duration)).with_audio(audio_clip)
+video_clip.write_videofile("temp_stitched.mp4", codec="libx264", audio_codec="aac", fps=24)
+
+video_clip.close()
 audio_clip.close()
 
-# 5. Burn high-contrast bold centered captions using FFmpeg
-words = voiceover.replace("'", "").split()
-chunk_size = 4
-formatted_lines = [" ".join(words[i:i+chunk_size]) for i in range(0, len(words), chunk_size)]
-caption_display = "\\n".join(formatted_lines[:3])
-
+# 6. Burn Dynamic Timed Subtitles (Centered, Auto-Wrapped, High-Contrast Yellow)
 ffmpeg_cmd = [
     "ffmpeg", "-y", "-i", "temp_stitched.mp4",
     "-vf", (
-        f"scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-        f"drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:"
-        f"text='{caption_display}':fontcolor=yellow:fontsize=52:line_spacing=24:"
-        f"borderw=6:bordercolor=black:x=(w-text_w)/2:y=(h-text_h)/2"
+        "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+        "subtitles=subs.srt:force_style='FontName=DejaVu Sans,FontSize=22,"
+        "PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,"
+        "Alignment=10,Bold=1'"
     ),
-    "-c:v", "libx264", "-c:a", "copy", "final.mp4"
+    "-c:v", "libx264", "-crf", "18", "-c:a", "copy", "final.mp4"
 ]
-
 subprocess.run(ffmpeg_cmd, check=True)
 
-# 6. Send to Telegram
+# 7. Send Video Preview to Telegram
 tg_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-caption_text = f"🔥 {title}\n\n🎙️ {voiceover}"
+caption_text = f"🪐 3D Rendered Short: {title}\n\n🎙️ {voiceover}"
 
 with open("final.mp4", "rb") as video_file:
     payload = {
@@ -141,5 +137,5 @@ with open("final.mp4", "rb") as video_file:
     r = requests.post(tg_url, data=payload, files={"video": video_file})
     print(f"Telegram status: {r.status_code}")
 
-print("Shorts generation complete.")
-        
+print("3D Short with dynamic captions completed.")
+    
