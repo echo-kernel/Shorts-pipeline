@@ -1,6 +1,5 @@
 import bpy
 import math
-import random
 import sys
 
 # 1. Read duration from CLI
@@ -29,21 +28,22 @@ scene.frame_end = total_frames
 scene.render.engine = 'BLENDER_EEVEE_NEXT' if hasattr(bpy.types, 'RenderEngineEEVEENext') else 'BLENDER_EEVEE'
 if hasattr(scene, 'eevee'):
     scene.eevee.taa_render_samples = 16
-    if hasattr(scene.eevee, 'use_bloom'):
-        scene.eevee.use_bloom = True
 
 # Deep Space World
 world = bpy.data.worlds.new("SpaceWorld")
 scene.world = world
-world.use_nodes = True
-bg = world.node_tree.nodes.get("Background")
-if bg:
-    bg.inputs[0].default_value = (0.005, 0.008, 0.02, 1.0)
+if hasattr(world, "use_nodes") and not world.use_nodes:
+    world.use_nodes = True
+if world.node_tree:
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.005, 0.008, 0.02, 1.0)
 
 # Materials
 def make_glow(name, color, strength=5.0):
     m = bpy.data.materials.new(name)
-    m.use_nodes = True
+    if hasattr(m, "use_nodes") and not m.use_nodes:
+        m.use_nodes = True
     nodes = m.node_tree.nodes
     nodes.clear()
     out = nodes.new("ShaderNodeOutputMaterial")
@@ -55,7 +55,8 @@ def make_glow(name, color, strength=5.0):
 
 def make_metal(name, color):
     m = bpy.data.materials.new(name)
-    m.use_nodes = True
+    if hasattr(m, "use_nodes") and not m.use_nodes:
+        m.use_nodes = True
     bsdf = m.node_tree.nodes.get("Principled BSDF")
     if bsdf:
         bsdf.inputs["Base Color"].default_value = color
@@ -67,10 +68,9 @@ mat_cyan = make_glow("Cyan", (0.0, 0.85, 1.0, 1.0), 4.5)
 mat_magenta = make_glow("Magenta", (1.0, 0.15, 0.65, 1.0), 5.0)
 mat_gold = make_metal("Gold", (1.0, 0.75, 0.15, 1.0))
 mat_dark_metal = make_metal("DarkMetal", (0.08, 0.15, 0.35, 1.0))
-mat_star = make_glow("Star", (1.0, 1.0, 1.0, 1.0), 6.0)
 
 # ==========================================
-# SET 1 (Located at X=0): Quantum Core
+# SET 1 (X=0): Quantum Core
 # ==========================================
 bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=1.5, location=(0, 0, 0))
 core = bpy.context.active_object
@@ -85,19 +85,17 @@ ring2 = bpy.context.active_object
 ring2.data.materials.append(mat_cyan)
 
 # ==========================================
-# SET 2 (Located at X=50): Neon Warp Tunnel
+# SET 2 (X=50): Neon Warp Tunnel
 # ==========================================
-tunnel_rings = []
 for i in range(18):
     y_pos = i * 2.5
     bpy.ops.mesh.primitive_torus_add(major_radius=2.6, minor_radius=0.06, location=(50, y_pos, 0))
     tr = bpy.context.active_object
     tr.rotation_euler = (math.radians(90), 0, 0)
     tr.data.materials.append(mat_cyan if i % 2 == 0 else mat_magenta)
-    tunnel_rings.append(tr)
 
 # ==========================================
-# SET 3 (Located at X=100): Crystal Matrix
+# SET 3 (X=100): Crystal Matrix
 # ==========================================
 crystals = []
 for gx in range(-2, 3):
@@ -123,16 +121,16 @@ cam_obj = bpy.data.objects.new("MainCam", cam_data)
 scene.collection.objects.link(cam_obj)
 scene.camera = cam_obj
 
-# Helper to snap camera cleanly between cuts (CONSTANT interpolation)
-def set_cam_key(frame, loc, rot_deg):
+def set_cam_key(frame, loc, rot_deg, interp='BEZIER'):
+    bpy.context.preferences.edit.keyframe_new_interpolation_type = interp
     cam_obj.location = loc
     cam_obj.rotation_euler = tuple(math.radians(a) for a in rot_deg)
     cam_obj.keyframe_insert(data_path="location", frame=frame)
     cam_obj.keyframe_insert(data_path="rotation_euler", frame=frame)
 
 # --- SCENE 1 ANIMATION (Frames 1 to cut1-1): Quantum Core Orbit ---
-set_cam_key(1, (0, -7.5, 0.5), (86, 0, 0))
-set_cam_key(cut1 - 1, (3.2, -5.8, 1.8), (74, 0, 28))
+set_cam_key(1, (0, -7.5, 0.5), (86, 0, 0), interp='BEZIER')
+set_cam_key(cut1 - 1, (3.2, -5.8, 1.8), (74, 0, 28), interp='CONSTANT')
 
 core.rotation_euler = (0, 0, 0)
 core.keyframe_insert(data_path="rotation_euler", frame=1)
@@ -150,25 +148,18 @@ ring2.rotation_euler = (math.radians(-45), math.radians(-360), math.radians(180)
 ring2.keyframe_insert(data_path="rotation_euler", frame=cut1)
 
 # --- SCENE 2 ANIMATION (Frames cut1 to cut2-1): High-Speed Warp Tunnel ---
-set_cam_key(cut1, (50, -1.0, 0), (90, 0, 0))
-set_cam_key(cut2 - 1, (50, 32.0, 0), (90, 180, 0))
+set_cam_key(cut1, (50, -1.0, 0), (90, 0, 0), interp='BEZIER')
+set_cam_key(cut2 - 1, (50, 32.0, 0), (90, 180, 0), interp='CONSTANT')
 
 # --- SCENE 3 ANIMATION (Frames cut2 to total_frames): Crystal Matrix Sweep ---
-set_cam_key(cut2, (100, -7.0, 5.5), (52, 0, 0))
-set_cam_key(total_frames, (103.5, -4.5, 3.5), (58, 0, 35))
+set_cam_key(cut2, (100, -7.0, 5.5), (52, 0, 0), interp='BEZIER')
+set_cam_key(total_frames, (103.5, -4.5, 3.5), (58, 0, 35), interp='BEZIER')
 
 for idx, c in enumerate(crystals):
     c.rotation_euler = (0, 0, 0)
     c.keyframe_insert(data_path="rotation_euler", frame=cut2)
     c.rotation_euler = (0, 0, math.radians(360 if idx % 2 == 0 else -360))
     c.keyframe_insert(data_path="rotation_euler", frame=total_frames)
-
-# Make transitions at cut1-1 and cut2-1 instant hard cuts (no sliding camera across empty space)
-if cam_obj.animation_data and cam_obj.animation_data.action:
-    for fcurve in cam_obj.animation_data.action.fcurves:
-        for kp in fcurve.keyframe_points:
-            if int(kp.co.x) in [cut1 - 1, cut2 - 1]:
-                kp.interpolation = 'CONSTANT'
 
 # Export MP4
 scene.render.image_settings.file_format = 'FFMPEG'
@@ -178,4 +169,6 @@ scene.render.ffmpeg.constant_rate_factor = 'MEDIUM'
 scene.render.ffmpeg.ffmpeg_preset = 'REALTIME'
 scene.render.filepath = "./blender_3d_render.mp4"
 
+print("Starting Blender 5.0 3D animation render...")
 bpy.ops.render.render(animation=True)
+print("Blender 3D render finished successfully.")
