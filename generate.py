@@ -1,340 +1,357 @@
 
 import os
+import re
 import json
-import asyncio
 import subprocess
-
 import requests
+from pathlib import Path
+
 import edge_tts
 from google import genai
 
-# ==================================================
-# CONFIGURATION
-# ==================================================
-
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
-
-MODEL = "gemini-3.8-flash"
-VOICE = "en-US-ChristopherNeural"
+from ai_video import generate_video
 
 
-# ==================================================
-# CHECK REQUIRED PROGRAMS
-# ==================================================
+# ---------------- CONFIGURATION ----------------
 
-def check_dependencies():
-    for command in ["ffmpeg", "ffprobe"]:
-        subprocess.run(
-            ["which", command],
-            check=True,
-            capture_output=True
-        )
+MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+TOPIC = os.getenv(
+    "VIDEO_TOPIC",
+    "U Tirot Sing and the Khasi resistance against British expansion in 1829"
+)
+
+VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
+OUTPUT_DIR = Path("output")
+WORK_DIR = OUTPUT_DIR / "work"
+
+OUTPUT_DIR.mkdir(exist_ok=True)
+WORK_DIR.mkdir(exist_ok=True)
 
 
-# ==================================================
-# GEMINI SCRIPT GENERATION
-# ==================================================
+# ---------------- UTILITIES ----------------
 
-def create_script():
-    client = genai.Client(api_key=GEMINI_API_KEY)
+def run_command(command):
+    print("Running:", " ".join(map(str, command)))
+    subprocess.run(command, check=True)
 
-    prompt = """
-Create a compelling YouTube Shorts script about a lesser-known
-historical event or hero from Indian history.
+
+def get_duration(filename):
+    result = subprocess.check_output([
+        "ffprobe",
+        "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        str(filename)
+    ])
+    return float(result.decode().strip())
+
+
+def clean_json(text):
+    text = text.strip()
+    text = re.sub(r"^```(?:json)?", "", text)
+    text = re.sub(r"```$", "", text)
+    return json.loads(text.strip())
+
+
+# ---------------- GEMINI SCRIPT ----------------
+
+def create_story():
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    if not api_key:
+        raise RuntimeError("GEMINI_API_KEY secret is missing.")
+
+    client = genai.Client(api_key=api_key)
+
+    prompt = f"""
+Create a historically responsible YouTube Short about:
+
+{TOPIC}
+
+Return ONLY valid JSON with this structure:
+{{
+  "title": "Short engaging title",
+  "voiceover": "Hindi narration, approximately 105 to 120 words",
+  "scenes": [
+    "Detailed English cinematic video prompt for scene 1",
+    "Detailed English cinematic video prompt for scene 2",
+    "Detailed English cinematic video prompt for scene 3",
+    "Detailed English cinematic video prompt for scene 4"
+  ]
+}}
 
 Requirements:
-- 105 to 120 spoken words.
-- Start with a powerful hook.
-- Use historically accurate information.
-- Make the narration dramatic and engaging.
-- Do not invent historical facts.
-- Write natural spoken English.
-
-Return only valid JSON in this format:
-
-{
-  "title": "Short video title",
-  "voiceover": "Complete narration",
-  "visual_story": "Brief visual description of the story"
-}
+- Narration must be natural Hindi.
+- Use a powerful documentary storytelling style.
+- Keep historical details accurate.
+- Do not invent quotations, dates, battles, or events.
+- If a detail is uncertain, avoid presenting it as fact.
+- Each scene prompt must describe a realistic cinematic historical scene.
+- Specify clothing, architecture, environment, lighting and camera movement.
+- No modern objects, text, logos, watermarks or fantasy elements.
+- Each scene should be visually different.
+- Vertical 9:16 composition.
 """
-
-    print(f"Using Gemini model: {MODEL}")
 
     response = client.models.generate_content(
         model=MODEL,
         contents=prompt,
-        config={
-            "response_mime_type": "application/json"
-        }
+        config={"response_mime_type": "application/json"}
     )
 
-    data = json.loads(response.text)
+    data = clean_json(response.text)
 
-    title = data["title"].strip()
-    voiceover = data["voiceover"].strip()
-    visual_story = data.get("visual_story", "").strip()
+    if len(data.get("scenes", [])) != 4:
+        raise RuntimeError("Gemini did not return exactly four scene prompts.")
 
-    if not title or not voiceover:
-        raise ValueError("Gemini returned an empty title or narration.")
+    if not data.get("voiceover"):
+        raise RuntimeError("Gemini returned an empty narration.")
 
-    print("\nTITLE:", title)
-    print("\nVOICEOVER:", voiceover)
-
-    return title, voiceover, visual_story
+    return data
 
 
-# ==================================================
-# TEXT TO SPEECH
-# ==================================================
+# ---------------- HINDI NARRATION ----------------
 
-async def create_voice(text):
-    print("Generating voice narration...")
-
+async def create_voice(text, filename):
     communicate = edge_tts.Communicate(
-        text,
-        VOICE,
-        rate="+10%"
+        text=text,
+        voice=VOICE,
+        rate="-5%",
+        volume="+0%"
     )
-
-    await communicate.save("voice.mp3")
-
-    if not os.path.exists("voice.mp3"):
-        raise FileNotFoundError("Voice generation failed.")
+    await communicate.save(str(filename))
 
 
-# ==================================================
-# AUDIO DURATION
-# ==================================================
+def generate_voice(text):
+    import asyncio
 
-def get_audio_duration():
-    result = subprocess.run(
-        [
-            "ffprobe",
-            "-v", "error",
-            "-show_entries", "format=duration",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            "voice.mp3"
-        ],
-        capture_output=True,
-        text=True,
-        check=True
-    )
+    voice_file = WORK_DIR / "narration.mp3"
+    asyncio.run(create_voice(text, voice_file))
 
-    return float(result.stdout.strip())
+    if not voice_file.exists() or voice_file.stat().st_size < 1000:
+        raise RuntimeError("Voice generation failed.")
+
+    return voice_file
 
 
-# ==================================================
-# SUBTITLE GENERATION
-# ==================================================
+# ---------------- SUBTITLES ----------------
 
-def create_subtitles(text, duration):
+def make_srt(text, duration, filename):
     words = text.split()
 
-    chunks = [
-        " ".join(words[i:i + 4])
-        for i in range(0, len(words), 4)
+    if not words:
+        raise RuntimeError("Narration has no words.")
+
+    # Display approximately five words at a time.
+    groups = [
+        words[i:i + 5]
+        for i in range(0, len(words), 5)
     ]
 
-    chunk_duration = duration / max(len(chunks), 1)
+    segment_duration = duration / len(groups)
 
-    def timestamp(seconds):
-        hours = int(seconds // 3600)
-        minutes = int((seconds % 3600) // 60)
-        seconds = seconds % 60
+    def stamp(seconds):
+        milliseconds = int(seconds * 1000)
+        hours = milliseconds // 3600000
+        minutes = (milliseconds % 3600000) // 60000
+        seconds_part = (milliseconds % 60000) // 1000
+        millis = milliseconds % 1000
 
         return (
-            f"{hours:02}:"
-            f"{minutes:02}:"
-            f"{seconds:06.3f}".replace(".", ",")
+            f"{hours:02}:{minutes:02}:"
+            f"{seconds_part:02},{millis:03}"
         )
 
-    with open(
-        "subtitles.srt",
-        "w",
-        encoding="utf-8"
-    ) as file:
+    with open(filename, "w", encoding="utf-8") as file:
+        for index, group in enumerate(groups):
+            start = index * segment_duration
+            end = min(duration, (index + 1) * segment_duration)
 
-        for index, chunk in enumerate(chunks):
-            start = index * chunk_duration
-            end = min(
-                (index + 1) * chunk_duration,
-                duration
-            )
-
-            file.write(
-                f"{index + 1}\n"
-                f"{timestamp(start)} --> {timestamp(end)}\n"
-                f"{chunk}\n\n"
-            )
-
-    print("Subtitles generated.")
+            file.write(f"{index + 1}\n")
+            file.write(f"{stamp(start)} --> {stamp(end)}\n")
+            file.write(" ".join(group) + "\n\n")
 
 
-# ==================================================
-# AI VIDEO GENERATION
-# ==================================================
+# ---------------- VIDEO GENERATION ----------------
 
-def generate_video(story, duration):
-    print("Starting AI video generation...")
+def create_clips(scenes):
+    clips = []
 
-    subprocess.run(
-        [
-            "python",
-            "ai_video.py",
-            story,
-            str(duration)
-        ],
-        check=True
-    )
+    for index, scene in enumerate(scenes, start=1):
+        output = WORK_DIR / f"scene_{index}.mp4"
 
-    if not os.path.exists("ai_video.mp4"):
-        raise FileNotFoundError("AI video was not generated.")
+        print(f"\nGenerating AI scene {index}/4")
+
+        generate_video(
+            prompt=scene,
+            output_path=output,
+            duration=5
+        )
+
+        clips.append(output)
+
+    return clips
 
 
-# ==================================================
-# FINAL VIDEO ASSEMBLY
-# ==================================================
+# ---------------- VIDEO ASSEMBLY ----------------
 
-def create_final_video(title, duration):
-    print("Combining AI video, narration and subtitles...")
+def normalize_clips(clips):
+    normalized = []
 
-    subtitle_filter = (
-        "subtitles=subtitles.srt:"
-        "force_style='FontName=DejaVu Sans,"
-        "FontSize=18,"
-        "Bold=1,"
-        "PrimaryColour=&H00FFFFFF,"
-        "OutlineColour=&H00000000,"
-        "BorderStyle=1,"
-        "Outline=3,"
-        "Shadow=1,"
-        "Alignment=2,"
-        "MarginV=130'"
-    )
+    for index, clip in enumerate(clips, start=1):
+        output = WORK_DIR / f"normalized_{index}.mp4"
 
-    subprocess.run(
-        [
-            "ffmpeg",
-            "-y",
-            "-i", "ai_video.mp4",
-            "-i", "voice.mp3",
-            "-vf", subtitle_filter,
-            "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-t", str(duration),
+        run_command([
+            "ffmpeg", "-y",
+            "-i", str(clip),
+            "-an",
+            "-vf",
+            "scale=1080:1920:force_original_aspect_ratio=increase,"
+            "crop=1080:1920,fps=24,setsar=1",
             "-c:v", "libx264",
             "-preset", "veryfast",
-            "-crf", "23",
-            "-c:a", "aac",
-            "-b:a", "128k",
-            "-shortest",
             "-pix_fmt", "yuv420p",
-            "final.mp4"
-        ],
-        check=True
+            "-movflags", "+faststart",
+            str(output)
+        ])
+
+        normalized.append(output)
+
+    return normalized
+
+
+def join_clips(clips):
+    concat_file = WORK_DIR / "clips.txt"
+
+    with open(concat_file, "w", encoding="utf-8") as file:
+        for clip in clips:
+            file.write(f"file '{clip.resolve()}'\n")
+
+    joined = WORK_DIR / "joined.mp4"
+
+    run_command([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(concat_file),
+        "-c", "copy",
+        str(joined)
+    ])
+
+    return joined
+
+
+def assemble_final_video(joined, voice, narration):
+    voice_duration = get_duration(voice)
+
+    subtitles = WORK_DIR / "captions.srt"
+    make_srt(narration, voice_duration, subtitles)
+
+    final_video = OUTPUT_DIR / "historical_short.mp4"
+
+    subtitle_filter = (
+        "subtitles=captions.srt:"
+        "force_style='FontName=DejaVu Sans,"
+        "FontSize=18,PrimaryColour=&H00FFFFFF,"
+        "OutlineColour=&H00000000,BorderStyle=1,"
+        "Outline=2,Shadow=1,Alignment=2,MarginV=120'"
     )
 
-    if not os.path.exists("final.mp4"):
-        raise FileNotFoundError("Final video was not created.")
+    # Run FFmpeg from WORK_DIR so the subtitle filename is simple.
+    run_command([
+        "ffmpeg", "-y",
+        "-stream_loop", "-1",
+        "-i", str(joined.resolve()),
+        "-i", str(voice.resolve()),
+        "-vf", subtitle_filter,
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-t", str(voice_duration),
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+        "-movflags", "+faststart",
+        str(final_video.resolve())
+    ])
 
-    print("Final video created successfully!")
+    if not final_video.exists() or final_video.stat().st_size < 10000:
+        raise RuntimeError("Final video was not created correctly.")
+
+    return final_video
 
 
-# ==================================================
-# TELEGRAM UPLOAD
-# ==================================================
+# ---------------- TELEGRAM DELIVERY ----------------
 
-def send_telegram(title):
-    print("Uploading video to Telegram...")
+def send_telegram(video):
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
 
-    url = (
-        f"https://api.telegram.org/"
-        f"bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-    )
+    if not token or not chat_id:
+        print("Telegram secrets not configured. Skipping upload.")
+        return
 
-    with open("final.mp4", "rb") as video:
+    url = f"https://api.telegram.org/bot{token}/sendVideo"
+
+    with open(video, "rb") as file:
         response = requests.post(
             url,
             data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "caption": title
+                "chat_id": chat_id,
+                "caption": "Your AI historical YouTube Short is ready!"
             },
-            files={
-                "video": (
-                    "final.mp4",
-                    video,
-                    "video/mp4"
-                )
-            },
-            timeout=300
+            files={"video": file},
+            timeout=(30, 600)
         )
 
     response.raise_for_status()
 
-    result = response.json()
+    if not response.json().get("ok"):
+        raise RuntimeError(f"Telegram upload failed: {response.text}")
 
-    if not result.get("ok"):
-        raise RuntimeError(
-            f"Telegram upload failed: {result}"
-        )
-
-    print("Video successfully sent to Telegram!")
+    print("Telegram upload completed.")
 
 
-# ==================================================
-# MAIN PIPELINE
-# ==================================================
+# ---------------- MAIN ----------------
 
 def main():
-    print("================================")
-    print(" AI HISTORICAL SHORTS GENERATOR")
-    print("================================")
+    print("\n========== AI HISTORICAL SHORTS ==========\n")
 
-    check_dependencies()
+    print("1. Creating historical story...")
+    story = create_story()
 
-    # Step 1: Generate script
-    title, voiceover, visual_story = create_script()
+    print("Title:", story["title"])
+    print("Narration:", story["voiceover"])
 
-    # Step 2: Generate narration
-    asyncio.run(create_voice(voiceover))
+    with open(OUTPUT_DIR / "story.json", "w", encoding="utf-8") as file:
+        json.dump(story, file, ensure_ascii=False, indent=2)
 
-    # Step 3: Get narration duration
-    duration = min(
-        59.0,
-        get_audio_duration() + 0.5
+    print("\n2. Generating Hindi voice...")
+    voice = generate_voice(story["voiceover"])
+
+    print("\n3. Generating four AI video scenes...")
+    clips = create_clips(story["scenes"])
+
+    print("\n4. Preparing vertical video...")
+    normalized = normalize_clips(clips)
+    joined = join_clips(normalized)
+
+    print("\n5. Adding narration and subtitles...")
+    final_video = assemble_final_video(
+        joined,
+        voice,
+        story["voiceover"]
     )
 
-    print(f"Video duration: {duration:.2f} seconds")
+    print("\n6. Sending to Telegram...")
+    send_telegram(final_video)
 
-    # Step 4: Generate subtitles
-    create_subtitles(voiceover, duration)
-
-    # Step 5: Prepare visual story
-    story_for_video = (
-        f"{title}. {visual_story}. {voiceover}"
-    )
-
-    # Step 6: Generate AI video
-    generate_video(
-        story_for_video,
-        duration
-    )
-
-    # Step 7: Combine everything
-    create_final_video(
-        title,
-        duration
-    )
-
-    # Step 8: Send to Telegram
-    send_telegram(title)
-
-    print("================================")
-    print(" PIPELINE COMPLETED SUCCESSFULLY")
-    print("================================")
+    print("\nSUCCESS!")
+    print("Final video:", final_video)
+    print("Title:", story["title"])
 
 
 if __name__ == "__main__":
