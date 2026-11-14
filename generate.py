@@ -1,57 +1,67 @@
 
 import os
-import re
 import json
 import asyncio
 import subprocess
-from pathlib import Path
 
 import requests
 import edge_tts
 from google import genai
 
-# ---------------- CONFIGURATION ----------------
+# ==================================================
+# CONFIGURATION
+# ==================================================
 
 GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
-MODEL = "gemini-2.5-flash"
+MODEL = "gemini-3.8-flash"
 VOICE = "en-US-ChristopherNeural"
 
-# ---------------- CHECK DEPENDENCIES ----------------
 
-for command in ["ffmpeg", "ffprobe"]:
-    subprocess.run(
-        ["which", command],
-        check=True,
-        capture_output=True
-    )
+# ==================================================
+# CHECK REQUIRED PROGRAMS
+# ==================================================
 
-# ---------------- GEMINI SCRIPT ----------------
+def check_dependencies():
+    for command in ["ffmpeg", "ffprobe"]:
+        subprocess.run(
+            ["which", command],
+            check=True,
+            capture_output=True
+        )
+
+
+# ==================================================
+# GEMINI SCRIPT GENERATION
+# ==================================================
 
 def create_script():
     client = genai.Client(api_key=GEMINI_API_KEY)
 
     prompt = """
-    Create a compelling YouTube Shorts script about a lesser-known
-    historical event or hero from Indian history.
+Create a compelling YouTube Shorts script about a lesser-known
+historical event or hero from Indian history.
 
-    Requirements:
-    - 105 to 120 spoken words.
-    - Start with a powerful hook.
-    - Use accurate historical information.
-    - Make it dramatic and interesting.
-    - Write natural spoken English.
-    - Do not invent historical facts.
+Requirements:
+- 105 to 120 spoken words.
+- Start with a powerful hook.
+- Use historically accurate information.
+- Make the narration dramatic and engaging.
+- Do not invent historical facts.
+- Write natural spoken English.
 
-    Return only valid JSON in this format:
-    {
-      "title": "Short video title",
-      "voiceover": "Complete narration",
-      "visual_story": "Brief visual description of the story"
-    }
-    """
+Return only valid JSON in this format:
+
+{
+  "title": "Short video title",
+  "voiceover": "Complete narration",
+  "visual_story": "Brief visual description of the story"
+}
+"""
+
+    print(f"Using Gemini model: {MODEL}")
 
     response = client.models.generate_content(
         model=MODEL,
@@ -68,17 +78,21 @@ def create_script():
     visual_story = data.get("visual_story", "").strip()
 
     if not title or not voiceover:
-        raise ValueError("Gemini returned an empty script.")
+        raise ValueError("Gemini returned an empty title or narration.")
 
-    print("Title:", title)
-    print("Voiceover:", voiceover)
+    print("\nTITLE:", title)
+    print("\nVOICEOVER:", voiceover)
 
     return title, voiceover, visual_story
 
 
-# ---------------- TEXT TO SPEECH ----------------
+# ==================================================
+# TEXT TO SPEECH
+# ==================================================
 
 async def create_voice(text):
+    print("Generating voice narration...")
+
     communicate = edge_tts.Communicate(
         text,
         VOICE,
@@ -87,8 +101,13 @@ async def create_voice(text):
 
     await communicate.save("voice.mp3")
 
+    if not os.path.exists("voice.mp3"):
+        raise FileNotFoundError("Voice generation failed.")
 
-# ---------------- AUDIO DURATION ----------------
+
+# ==================================================
+# AUDIO DURATION
+# ==================================================
 
 def get_audio_duration():
     result = subprocess.run(
@@ -107,10 +126,13 @@ def get_audio_duration():
     return float(result.stdout.strip())
 
 
-# ---------------- SUBTITLES ----------------
+# ==================================================
+# SUBTITLE GENERATION
+# ==================================================
 
 def create_subtitles(text, duration):
     words = text.split()
+
     chunks = [
         " ".join(words[i:i + 4])
         for i in range(0, len(words), 4)
@@ -129,10 +151,18 @@ def create_subtitles(text, duration):
             f"{seconds:06.3f}".replace(".", ",")
         )
 
-    with open("subtitles.srt", "w", encoding="utf-8") as file:
+    with open(
+        "subtitles.srt",
+        "w",
+        encoding="utf-8"
+    ) as file:
+
         for index, chunk in enumerate(chunks):
             start = index * chunk_duration
-            end = min((index + 1) * chunk_duration, duration)
+            end = min(
+                (index + 1) * chunk_duration,
+                duration
+            )
 
             file.write(
                 f"{index + 1}\n"
@@ -140,10 +170,16 @@ def create_subtitles(text, duration):
                 f"{chunk}\n\n"
             )
 
+    print("Subtitles generated.")
 
-# ---------------- AI VIDEO ----------------
+
+# ==================================================
+# AI VIDEO GENERATION
+# ==================================================
 
 def generate_video(story, duration):
+    print("Starting AI video generation...")
+
     subprocess.run(
         [
             "python",
@@ -154,10 +190,17 @@ def generate_video(story, duration):
         check=True
     )
 
+    if not os.path.exists("ai_video.mp4"):
+        raise FileNotFoundError("AI video was not generated.")
 
-# ---------------- FINAL VIDEO ----------------
+
+# ==================================================
+# FINAL VIDEO ASSEMBLY
+# ==================================================
 
 def create_final_video(title, duration):
+    print("Combining AI video, narration and subtitles...")
+
     subtitle_filter = (
         "subtitles=subtitles.srt:"
         "force_style='FontName=DejaVu Sans,"
@@ -172,30 +215,41 @@ def create_final_video(title, duration):
         "MarginV=130'"
     )
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-i", "ai_video.mp4",
-        "-i", "voice.mp3",
-        "-vf", subtitle_filter,
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-t", str(duration),
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-shortest",
-        "-pix_fmt", "yuv420p",
-        "final.mp4"
-    ], check=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-i", "ai_video.mp4",
+            "-i", "voice.mp3",
+            "-vf", subtitle_filter,
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-t", str(duration),
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "23",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-shortest",
+            "-pix_fmt", "yuv420p",
+            "final.mp4"
+        ],
+        check=True
+    )
+
+    if not os.path.exists("final.mp4"):
+        raise FileNotFoundError("Final video was not created.")
 
     print("Final video created successfully!")
 
 
-# ---------------- TELEGRAM UPLOAD ----------------
+# ==================================================
+# TELEGRAM UPLOAD
+# ==================================================
 
 def send_telegram(title):
+    print("Uploading video to Telegram...")
+
     url = (
         f"https://api.telegram.org/"
         f"bot{TELEGRAM_BOT_TOKEN}/sendVideo"
@@ -223,46 +277,64 @@ def send_telegram(title):
     result = response.json()
 
     if not result.get("ok"):
-        raise RuntimeError(f"Telegram upload failed: {result}")
+        raise RuntimeError(
+            f"Telegram upload failed: {result}"
+        )
 
-    print("Video sent successfully to Telegram!")
+    print("Video successfully sent to Telegram!")
 
 
-# ---------------- MAIN ----------------
+# ==================================================
+# MAIN PIPELINE
+# ==================================================
 
 def main():
-    print("Creating historical script...")
+    print("================================")
+    print(" AI HISTORICAL SHORTS GENERATOR")
+    print("================================")
 
+    check_dependencies()
+
+    # Step 1: Generate script
     title, voiceover, visual_story = create_script()
 
-    print("Creating narration...")
-
+    # Step 2: Generate narration
     asyncio.run(create_voice(voiceover))
 
+    # Step 3: Get narration duration
     duration = min(
         59.0,
         get_audio_duration() + 0.5
     )
 
-    print(f"Audio duration: {duration:.2f} seconds")
+    print(f"Video duration: {duration:.2f} seconds")
 
+    # Step 4: Generate subtitles
     create_subtitles(voiceover, duration)
 
+    # Step 5: Prepare visual story
     story_for_video = (
         f"{title}. {visual_story}. {voiceover}"
     )
 
-    print("Generating AI video...")
+    # Step 6: Generate AI video
+    generate_video(
+        story_for_video,
+        duration
+    )
 
-    generate_video(story_for_video, duration)
+    # Step 7: Combine everything
+    create_final_video(
+        title,
+        duration
+    )
 
-    print("Combining video, voice and subtitles...")
-
-    create_final_video(title, duration)
-
-    print("Sending video to Telegram...")
-
+    # Step 8: Send to Telegram
     send_telegram(title)
+
+    print("================================")
+    print(" PIPELINE COMPLETED SUCCESSFULLY")
+    print("================================")
 
 
 if __name__ == "__main__":
