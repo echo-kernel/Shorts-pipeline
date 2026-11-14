@@ -1,32 +1,49 @@
-name: Make Short and Send Telegram
+
+name: AI Historical Shorts Generator
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Blender, FFmpeg & Fonts
+      - name: Install FFmpeg and fonts
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
 
-      - name: Install Python Packages
-        run: pip install google-genai edge-tts moviepy requests
+      - name: Install Python packages
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-genai edge-tts requests gradio_client
 
-      - name: Run 3D Video Pipeline
+      - name: Generate AI Short and send Telegram
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: python generate.py
-        
+
+      - name: Upload final video as artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated-ai-short
+          path: final.mp4
+          retention-days: 7
+          
