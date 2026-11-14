@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  generate-video:
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -19,31 +19,39 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
-      - name: Install FFmpeg and fonts
+      - name: Install FFmpeg
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          sudo apt-get install -y ffmpeg
 
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install google-genai edge-tts requests gradio_client
+          pip install -r requirements.txt
 
-      - name: Generate AI Short and send Telegram
+      - name: Check FFmpeg
+        run: |
+          ffmpeg -version
+          ffprobe -version
+
+      - name: Generate historical video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: gemini-3.8-flash
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python generate.py
+        run: |
+          python -u generate.py
 
-      - name: Upload final video as artifact
-        if: success()
+      - name: Upload generated video as artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: generated-ai-short
-          path: final.mp4
+          name: historical-short
+          path: output/
+          if-no-files-found: warn
           retention-days: 7
           
