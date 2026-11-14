@@ -16,6 +16,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check project files
+        run: |
+          pwd
+          ls -la
+          test -f requirements.txt || exit 1
+          test -f generate.py || exit 1
+          test -f ai_video.py || exit 1
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -29,29 +37,21 @@ jobs:
       - name: Install Python packages
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          python -m pip install -r requirements.txt
 
-      - name: Check FFmpeg
-        run: |
-          ffmpeg -version
-          ffprobe -version
-
-      - name: Generate historical video
+      - name: Generate video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: gemini-3.8-flash
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python -u generate.py
+        run: python -u generate.py
 
-      - name: Upload generated video as artifact
+      - name: Save generated video
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: historical-short
           path: output/
           if-no-files-found: warn
-          retention-days: 7
           
