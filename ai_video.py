@@ -1,137 +1,96 @@
 
 import os
+import time
+import random
 import shutil
-import subprocess
 from pathlib import Path
 
+import requests
 from gradio_client import Client
 
-SPACE = "innoai/minimax-h3-flashgen-4step"
-OUTPUT = Path("ai_video.mp4")
-CLIP_DIR = Path("ai_video_clips")
 
+SPACE = "innoai/minimax-h3-flashgen-4step"
 CANVAS = "544x960 · 9:16 fast"
-CLIP_DURATION = 5
+MAX_ATTEMPTS = 4
+
 
 def get_video_path(result):
-    if not isinstance(result, (tuple, list)) or not result:
-        raise RuntimeError(f"Unexpected AI response: {result}")
+    # This Space returns multiple outputs; the first is the video.
+    if isinstance(result, (tuple, list)):
+        result = result[0]
 
-    video = result[0]
+    if isinstance(result, dict):
+        result = result.get("path") or result.get("video") or result.get("url")
 
-    if isinstance(video, dict):
-        video = video.get("path") or video.get("url")
+    if not result:
+        raise RuntimeError("Hugging Face returned no video.")
 
-    if not video:
-        raise RuntimeError(f"No video returned: {result}")
-
-    path = Path(str(video))
-
-    if not path.is_file():
-        raise FileNotFoundError(f"AI video file not found: {video}")
-
-    return path
+    return result
 
 
-def generate_ai_video(story, total_duration):
-    CLIP_DIR.mkdir(exist_ok=True)
+def generate_video(prompt, output_path, duration=5):
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if not prompt or not prompt.strip():
+        raise ValueError("Empty scene prompt.")
+
+    duration = max(2, min(14, int(duration)))
     token = os.getenv("HF_TOKEN")
-    if token:
-        client = Client(SPACE, token=token)
-    else:
-        client = Client(SPACE)
 
-    scene_directions = [
-        "Establishing shot showing the historical location, landscape and period.",
-        "Show the main historical characters and their daily lives.",
-        "Show the central historical conflict with realistic action.",
-        "Show the aftermath and emotional conclusion of the story."
-    ]
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            print(f"Connecting to Hugging Face: attempt {attempt}/{MAX_ATTEMPTS}")
 
-    clips = []
+            client_args = {"verbose": False}
+            if token:
+                client_args["hf_token"] = token
 
-    for index, direction in enumerate(scene_directions, start=1):
-        print(f"Generating AI scene {index}/4...", flush=True)
+            client = Client(SPACE, **client_args)
 
-        prompt = (
-            "Create a photorealistic historical documentary video. "
-            "Authentic historical clothing, architecture, weapons and environment. "
-            "Natural human movement, realistic faces, cinematic camera movement, "
-            "dramatic natural lighting, detailed environment. "
-            "No text, no subtitles, no watermark, no logos. "
-            f"Historical story: {story}. "
-            f"Scene direction: {direction}"
-        )
+            result = client.predict(
+                prompt,
+                None,                       # First frame image
+                None,                       # Last frame image
+                CANVAS,
+                duration,
+                random.randint(1, 999999),
+                False,                      # Prompt enhancement
+                api_name="/generate"
+            )
 
-        result = client.predict(
-            prompt,
-            None,
-            None,
-            CANVAS,
-            CLIP_DURATION,
-            1000 + index,
-            False,
-            api_name="/generate"
-        )
+            video = get_video_path(result)
 
-        source = get_video_path(result)
-        destination = CLIP_DIR / f"scene_{index:02d}.mp4"
+            # Gradio normally returns a downloaded local file path.
+            if isinstance(video, str) and video.startswith(("http://", "https://")):
+                response = requests.get(video, timeout=(30, 300))
+                response.raise_for_status()
+                with open(output_path, "wb") as f:
+                    f.write(response.content)
 
-        shutil.copy2(source, destination)
-        clips.append(destination)
+            elif isinstance(video, str) and os.path.isfile(video):
+                shutil.copy2(video, output_path)
 
-        print(f"Saved {destination}", flush=True)
+            else:
+                raise RuntimeError(f"Unexpected video result: {video}")
 
-    # Join the four AI-generated clips.
-    concat_file = CLIP_DIR / "concat.txt"
+            if not output_path.exists() or output_path.stat().st_size < 1000:
+                raise RuntimeError("Video file is missing or too small.")
 
-    with concat_file.open("w", encoding="utf-8") as file:
-        for clip in clips:
-            file.write(f"file '{clip.resolve()}'\n")
+            print(f"Saved video: {output_path}")
+            return str(output_path)
 
-    joined = CLIP_DIR / "joined.mp4"
+        except Exception as exc:
+            print(f"Attempt {attempt} failed: {type(exc).__name__}: {exc}")
 
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-f", "concat",
-        "-safe", "0",
-        "-i", str(concat_file),
-        "-an",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        str(joined)
-    ], check=True)
+            if attempt == MAX_ATTEMPTS:
+                raise RuntimeError(
+                    "Hugging Face generation failed after all retries."
+                ) from exc
 
-    # Repeat the combined scenes to match the narration duration.
-    subprocess.run([
-        "ffmpeg", "-y",
-        "-stream_loop", "-1",
-        "-i", str(joined),
-        "-t", str(total_duration),
-        "-an",
-        "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
-        "-r", "24",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-pix_fmt", "yuv420p",
-        str(OUTPUT)
-    ], check=True)
+            wait = 20 * attempt
+            print(f"Waiting {wait} seconds before retry...")
+            time.sleep(wait)
 
-    print(f"AI video ready: {OUTPUT}", flush=True)
-
-
-if __name__ == "__main__":
-    import sys
-
-    if len(sys.argv) < 3:
-        raise SystemExit(
-            "Usage: python ai_video.py story_text duration_seconds"
-        )
-
-    story = sys.argv[1]
-    duration = float(sys.argv[2])
-
-    generate_ai_video(story, duration)
-      
+    raise RuntimeError("Video generation failed.")
+            
