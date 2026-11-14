@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   generate:
-    name: Generate AI Video
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -18,30 +17,44 @@ jobs:
       - name: Checkout project
         uses: actions/checkout@v4
 
+      - name: Initialize diagnostic log
+        run: |
+          touch generation.log
+          echo "Pipeline started: $(date -u)" | tee -a generation.log
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
 
       - name: Check project files
         run: |
-          pwd
-          ls -la
-          python -c "import os; files=['requirements.txt','generate.py','ai_video.py']; missing=[f for f in files if not os.path.isfile(f)]; print('Missing files:', missing); assert not missing, 'Required project file missing'"
+          set -o pipefail
+          {
+            pwd
+            ls -la
+            for f in requirements.txt generate.py ai_video.py; do
+              if [ ! -f "$f" ]; then
+                echo "ERROR: Missing file: $f"
+                exit 1
+              fi
+              echo "OK: $f"
+            done
+          } 2>&1 | tee -a generation.log
 
       - name: Install FFmpeg
         run: |
+          set -o pipefail
           sudo apt-get update 2>&1 | tee -a generation.log
           sudo apt-get install -y ffmpeg 2>&1 | tee -a generation.log
-          ffmpeg -version
 
       - name: Install Python dependencies
         run: |
+          set -o pipefail
           python -m pip install --upgrade pip 2>&1 | tee -a generation.log
           pip install -r requirements.txt 2>&1 | tee -a generation.log
 
-      - name: Generate historical AI video
+      - name: Generate AI video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -60,23 +73,26 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-      - name: Save diagnostic log
+      - name: Upload diagnostic log
         if: always()
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: generation-diagnostic-log
           path: generation.log
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 3
 
-  telegram-notification:
-    name: Telegram Notification
+  telegram:
     needs: generate
     if: always()
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
 
     steps:
-      - name: Checkout project
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download diagnostic log
@@ -86,10 +102,13 @@ jobs:
           name: generation-diagnostic-log
           path: diagnostic
 
-      - name: Send Telegram notification
+      - name: Send Telegram report
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
           JOB_RESULT: ${{ needs.generate.result }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python notify.py
