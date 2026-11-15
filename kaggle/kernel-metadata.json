@@ -9,7 +9,7 @@
   "enable_gpu": "true",
   "enable_internet": "true",
   "machine_shape": "NvidiaTeslaT4",
-  "dataset_sources": [apuravjadhav/shorts-pipeline-secrets],
+  "dataset_sources": ["apuravjadhav/shorts-pipeline-secrets"],
   "competition_sources": [],
   "kernel_sources": [],
   "model_sources": []
