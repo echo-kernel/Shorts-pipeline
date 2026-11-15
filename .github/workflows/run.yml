@@ -31,7 +31,7 @@ jobs:
       - name: Check project files
         run: |
           set -e
-          for f in requirements.txt generate.py ai_video.py; do
+          for f in requirements.txt generate.py ai_video.py notify.py; do
             test -f "$f" || {
               echo "ERROR: Missing file: $f"
               exit 1
@@ -49,13 +49,23 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Check Gemini API key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "ERROR: GEMINI_API_KEY secret is missing."
+            exit 1
+          fi
+          echo "Gemini API key is configured."
+
       - name: Generate AI video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_MODEL: gemini-2.5-flash
+          GEMINI_MODEL: gemini-3.8-flash
         run: |
           set -o pipefail
           python -u generate.py 2>&1 | tee generation.log
