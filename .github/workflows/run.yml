@@ -1,121 +1,59 @@
 
-name: AI Historical Shorts Pipeline
+name: Submit AI Shorts to Kaggle
 
 on:
   workflow_dispatch:
+    inputs:
+      topic:
+        description: "Historical video topic"
+        required: true
+        default: "U Tirot Sing - Khasi Resistance"
 
 permissions:
   contents: read
-  actions: read
 
 jobs:
-  generate:
+  submit-kaggle:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
 
     steps:
-      - name: Checkout project
+      - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Initialize diagnostic log
-        run: |
-          mkdir -p diagnostic
-          touch generation.log
-          echo "Pipeline started: $(date -u)" | tee -a generation.log
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Check project files
-        run: |
-          set -e
-          for f in requirements.txt generate.py ai_video.py notify.py; do
-            test -f "$f" || {
-              echo "ERROR: Missing file: $f"
-              exit 1
-            }
-            echo "OK: $f"
-          done
-
-      - name: Install FFmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-
-      - name: Install Python dependencies
+      - name: Install Kaggle CLI
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install kaggle
 
-      - name: Check Gemini API key
+      - name: Submit GPU notebook
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          if [ -z "$GEMINI_API_KEY" ]; then
-            echo "ERROR: GEMINI_API_KEY secret is missing."
+          set -euo pipefail
+
+          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
+            echo "Kaggle credentials are missing."
             exit 1
           fi
-          echo "Gemini API key is configured."
 
-      - name: Generate AI video
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_MODEL: gemini-3.8-flash
-        run: |
-          set -o pipefail
-          python -u generate.py 2>&1 | tee generation.log
+          if [ ! -f kaggle/kernel-metadata.json ]; then
+            echo "Kaggle metadata file is missing."
+            exit 1
+          fi
 
-      - name: Upload generated video
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-historical-short
-          path: output/
-          if-no-files-found: error
-          retention-days: 3
+          if [ ! -f kaggle/kaggle_runner.py ]; then
+            echo "Kaggle runner file is missing."
+            exit 1
+          fi
 
-      - name: Upload diagnostic log
-        if: always()
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: generation-diagnostic-log
-          path: generation.log
-          if-no-files-found: warn
-          retention-days: 3
+          kaggle kernels push -p kaggle
 
-  telegram:
-    needs: generate
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download diagnostic log
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: generation-diagnostic-log
-          path: diagnostic
-
-      - name: Send Telegram report
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GITHUB_TOKEN: ${{ github.token }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          JOB_RESULT: ${{ needs.generate.result }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python notify.py
-        
+          echo "Kaggle submission command completed."
+          echo "https://www.kaggle.com/code/${KAGGLE_USERNAME}/shorts-pipeline-wan"
+          
