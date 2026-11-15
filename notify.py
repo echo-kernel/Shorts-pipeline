@@ -16,10 +16,10 @@ RUN_URL = os.getenv("RUN_URL", "")
 
 
 def get_github_logs():
-    url = (
-        f"https://api.github.com/repos/{REPO}"
-        f"/actions/runs/{RUN_ID}/logs"
-    )
+    if not all([TOKEN, REPO, RUN_ID]):
+        return "GitHub log credentials are unavailable."
+
+    url = f"https://api.github.com/repos/{REPO}/actions/runs/{RUN_ID}/logs"
 
     request = urllib.request.Request(
         url,
@@ -34,6 +34,7 @@ def get_github_logs():
         archive = zipfile.ZipFile(io.BytesIO(response.read()))
 
     logs = []
+
     for name in archive.namelist():
         if name.endswith(".txt"):
             content = archive.read(name).decode(
@@ -57,12 +58,12 @@ def get_diagnostics():
     try:
         return get_github_logs()
     except Exception as error:
-        return f"Could not retrieve GitHub logs: {error}"
+        return f"Could not retrieve workflow logs: {error}"
 
 
 def send(message):
     if not BOT or not CHAT:
-        raise RuntimeError("Telegram secrets are missing")
+        raise RuntimeError("Telegram secrets are missing.")
 
     url = f"https://api.telegram.org/bot{BOT}/sendMessage"
 
@@ -75,7 +76,8 @@ def send(message):
     request = urllib.request.Request(url, data=data)
 
     with urllib.request.urlopen(request, timeout=30) as response:
-        print(response.read().decode())
+        result = response.read().decode()
+        print(result)
 
 
 def main():
@@ -83,7 +85,7 @@ def main():
         message = (
             "✅ AI HISTORICAL SHORTS: SUCCESS\n\n"
             "Video generation completed.\n"
-            "Check the generated video artifact in GitHub Actions.\n\n"
+            "The video was sent to Telegram by the generation job.\n\n"
             f"Workflow logs: {RUN_URL}"
         )
     else:
