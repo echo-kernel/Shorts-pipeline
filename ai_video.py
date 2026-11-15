@@ -1,109 +1,155 @@
-
-import os
-import time
-import random
-import shutil
-import inspect
+import gc
+import math
+import subprocess
 from pathlib import Path
 
-import requests
-from gradio_client import Client
+import torch
+from diffusers import WanPipeline
+from diffusers.utils import export_to_video
 
-SPACE = "innoai/minimax-h3-flashgen-4step"
-CANVAS = "544x960 · 9:16 fast"
-MAX_ATTEMPTS = 4
+MODEL = "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
 
+LOCAL_MODEL = (
+    "/root/.cache/huggingface/hub/"
+    "models--Wan-AI--Wan2.1-T2V-1.3B-Diffusers/"
+    "snapshots/0fad780a534b6463e45facd96134c9f345acfa5b"
+)
 
-def get_video_path(result):
-    if isinstance(result, (tuple, list)):
-        result = result[0]
+_PIPE = None
 
-    if isinstance(result, dict):
-        result = result.get("path") or result.get("video") or result.get("url")
+def set_pipeline(pipeline):
+    global _PIPE
+    _PIPE = pipeline
 
-    if not result:
-        raise RuntimeError("Hugging Face returned no video.")
+def load_pipeline():
+    global _PIPE
 
-    return result
+    if _PIPE is not None:
+        return _PIPE
 
+    print("Loading Wan 2.1 from local cache...")
+
+    local_path = Path(LOCAL_MODEL)
+
+    if (local_path / "model_index.json").exists():
+        print("Using local Wan cache...")
+        _PIPE = WanPipeline.from_pretrained(
+            str(local_path),
+            torch_dtype=torch.float16,
+            local_files_only=True
+        )
+    else:
+        print("Downloading Wan model from Hugging Face...")
+        _PIPE = WanPipeline.from_pretrained(
+            MODEL,
+            torch_dtype=torch.float16
+        )
+
+    _PIPE.enable_model_cpu_offload()
+    return _PIPE
 
 def generate_video(prompt, output_path, duration=5, on_retry=None):
-    output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
     if not prompt or not prompt.strip():
         raise ValueError("Empty scene prompt.")
 
-    duration = max(2, min(14, int(duration)))
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA GPU is required.")
 
-    # Keep the GitHub secret name exactly HF_TOKEN.
-    hf_token = os.getenv("HF_TOKEN")
+    duration = max(1, min(14, int(duration)))
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
-        try:
-            print(f"Connecting to Hugging Face: attempt {attempt}/{MAX_ATTEMPTS}")
+    output_path = Path(output_path).resolve()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-            client_args = {"verbose": False}
+    pipeline = load_pipeline()
 
-            if hf_token:
-                parameters = inspect.signature(Client).parameters
+    # Each generated clip contains 33 NEW AI frames.
+    fps = 16
+    frames_per_clip = 33
+    clip_duration = frames_per_clip / fps
+    clip_count = math.ceil(duration / clip_duration)
 
-                if "token" in parameters:
-                    client_args["token"] = hf_token
-                elif "hf_token" in parameters:
-                    client_args["hf_token"] = hf_token
-                else:
-                    raise RuntimeError(
-                        "Installed gradio_client has no supported token parameter."
-                    )
+    work_dir = output_path.parent / (output_path.stem + "_parts")
+    work_dir.mkdir(parents=True, exist_ok=True)
 
-            client = Client(SPACE, **client_args)
+    raw_files = []
 
-            result = client.predict(
-                prompt,
-                None,
-                None,
-                CANVAS,
-                duration,
-                random.randint(1, 999999),
-                False,
-                api_name="/generate"
+    variations = [
+        "wide cinematic establishing shot",
+        "medium camera shot with natural character movement",
+        "low-angle cinematic camera composition",
+        "side tracking camera perspective",
+        "dramatic close cinematic composition"
+    ]
+
+    print("Generating", clip_count, "unique AI clips...")
+    print("Target duration:", duration, "seconds")
+
+    for i in range(clip_count):
+        raw_path = work_dir / f"part_{i:02d}.mp4"
+
+        scene_prompt = (
+            prompt.strip()
+            + ". " + variations[i % len(variations)]
+            + ". Cinematic realistic motion, natural movement, "
+              "consistent historical setting, detailed environment."
+        )
+
+        print(f"Generating clip {i + 1}/{clip_count}...")
+
+        result = pipeline(
+            prompt=scene_prompt,
+            height=832,
+            width=480,
+            num_frames=frames_per_clip,
+            num_inference_steps=20,
+            guidance_scale=5.0,
+            generator=torch.Generator("cuda").manual_seed(
+                20261115 + i * 7919
             )
+        )
 
-            video = get_video_path(result)
+        export_to_video(
+            result.frames[0],
+            str(raw_path),
+            fps=fps
+        )
 
-            if isinstance(video, str) and video.startswith(("http://", "https://")):
-                response = requests.get(video, timeout=(30, 300))
-                response.raise_for_status()
-                output_path.write_bytes(response.content)
+        raw_files.append(raw_path)
 
-            elif isinstance(video, str) and os.path.isfile(video):
-                shutil.copy2(video, output_path)
+        del result
+        gc.collect()
+        torch.cuda.empty_cache()
 
-            else:
-                raise RuntimeError(f"Unexpected video result: {video}")
+    # Join independently generated clips without looping.
+    concat_file = work_dir / "concat.txt"
 
-            if not output_path.exists() or output_path.stat().st_size < 1000:
-                raise RuntimeError("Video file is missing or too small.")
+    with open(concat_file, "w") as f:
+        for raw in raw_files:
+            safe_path = str(raw).replace("'", "'\\''")
+            f.write(f"file '{safe_path}'\n")
 
-            print(f"Saved video: {output_path}")
-            return str(output_path)
+    print("Joining unique clips with FFmpeg...")
 
-        except Exception as exc:
-            print(f"Attempt {attempt} failed: {type(exc).__name__}: {exc}")
+    subprocess.run([
+        "ffmpeg", "-y",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", str(concat_file),
+        "-t", str(duration),
+        "-vf", "scale=480:832:flags=lanczos,fps=24,setsar=1",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "23",
+        "-pix_fmt", "yuv420p",
+        "-an",
+        str(output_path)
+    ], check=True, capture_output=True, text=True)
 
-            if attempt == MAX_ATTEMPTS:
-                raise RuntimeError(
-                    f"Hugging Face generation failed after {MAX_ATTEMPTS} attempts: {exc}"
-                ) from exc
+    if not output_path.exists() or output_path.stat().st_size < 1000:
+        raise RuntimeError("Video output is missing or too small.")
 
-            wait = 20 * attempt
+    print("SUCCESS:", output_path)
+    print("Size:", round(output_path.stat().st_size / 1024**2, 2), "MB")
 
-            if on_retry:
-                on_retry(attempt, MAX_ATTEMPTS, str(exc), wait)
-
-            print(f"Waiting {wait} seconds before retry...")
-            time.sleep(wait)
-
-    raise RuntimeError("Video generation failed.")
-                
+    return str(output_path)
+    
