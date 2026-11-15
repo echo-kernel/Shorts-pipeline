@@ -15,6 +15,7 @@ permissions:
 jobs:
   submit-kaggle:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -30,7 +31,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install kaggle
 
-      - name: Submit GPU notebook
+      - name: Validate Kaggle files
+        run: |
+          set -e
+          test -f kaggle/kernel-metadata.json
+          test -f kaggle/kaggle_runner.py
+          echo "Kaggle files found."
+
+      - name: Submit GPU notebook to Kaggle
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
@@ -38,22 +46,12 @@ jobs:
           set -euo pipefail
 
           if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
-            echo "Kaggle credentials are missing."
-            exit 1
-          fi
-
-          if [ ! -f kaggle/kernel-metadata.json ]; then
-            echo "Kaggle metadata file is missing."
-            exit 1
-          fi
-
-          if [ ! -f kaggle/kaggle_runner.py ]; then
-            echo "Kaggle runner file is missing."
+            echo "ERROR: Kaggle credentials are missing."
             exit 1
           fi
 
           kaggle kernels push -p kaggle
 
-          echo "Kaggle submission command completed."
-          echo "https://www.kaggle.com/code/${KAGGLE_USERNAME}/shorts-pipeline-wan"
+          echo "Kaggle submission completed."
+          echo "Kernel: https://www.kaggle.com/code/${KAGGLE_USERNAME}/shorts-pipeline-wan"
           
