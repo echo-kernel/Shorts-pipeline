@@ -19,6 +19,7 @@ jobs:
 
       - name: Initialize diagnostic log
         run: |
+          mkdir -p diagnostic
           touch generation.log
           echo "Pipeline started: $(date -u)" | tee -a generation.log
 
@@ -29,48 +30,43 @@ jobs:
 
       - name: Check project files
         run: |
-          set -o pipefail
-          {
-            pwd
-            ls -la
-            for f in requirements.txt generate.py ai_video.py; do
-              if [ ! -f "$f" ]; then
-                echo "ERROR: Missing file: $f"
-                exit 1
-              fi
-              echo "OK: $f"
-            done
-          } 2>&1 | tee -a generation.log
+          set -e
+          for f in requirements.txt generate.py ai_video.py; do
+            test -f "$f" || {
+              echo "ERROR: Missing file: $f"
+              exit 1
+            }
+            echo "OK: $f"
+          done
 
       - name: Install FFmpeg
         run: |
-          set -o pipefail
-          sudo apt-get update 2>&1 | tee -a generation.log
-          sudo apt-get install -y ffmpeg 2>&1 | tee -a generation.log
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Install Python dependencies
         run: |
-          set -o pipefail
-          python -m pip install --upgrade pip 2>&1 | tee -a generation.log
-          pip install -r requirements.txt 2>&1 | tee -a generation.log
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Generate AI video
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_MODEL: gemini-2.5-flash
         run: |
           set -o pipefail
-          python -u generate.py 2>&1 | tee -a generation.log
+          python -u generate.py 2>&1 | tee generation.log
 
       - name: Upload generated video
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: generated-historical-short
-          path: |
-            *.mp4
-            output/
-          if-no-files-found: warn
+          path: output/
+          if-no-files-found: error
           retention-days: 3
 
       - name: Upload diagnostic log
