@@ -1,21 +1,18 @@
 
-name: Submit AI Shorts to Kaggle
+name: AI Historical Shorts Pipeline
 
 on:
   workflow_dispatch:
-    inputs:
-      topic:
-        description: "Historical video topic"
-        required: true
-        default: "U Tirot Sing - Khasi Resistance"
-
-permissions:
-  contents: read
+  push:
+    branches:
+      - main
+    paths:
+      - "kaggle/**"
+      - ".github/workflows/run.yml"
 
 jobs:
-  submit-kaggle:
+  submit-to-kaggle:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
@@ -26,47 +23,88 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Kaggle CLI dependencies
+      - name: Install Kaggle CLI
         run: |
           python -m pip install --upgrade pip
-          python -m pip install kaggle six
-          python -c "import kaggle, six; print('Kaggle CLI and six ready')"
+          pip install kaggle six
 
       - name: Validate Kaggle files
         run: |
-          set -e
           test -f kaggle/kernel-metadata.json
           test -f kaggle/kaggle_runner.py
           echo "Kaggle files found."
 
-      - name: Validate Kaggle credentials
+      - name: Validate credentials
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          set -euo pipefail
+          test -n "$KAGGLE_USERNAME"
+          test -n "$KAGGLE_KEY"
+          echo "Kaggle credentials found."
 
-          if [ -z "$KAGGLE_USERNAME" ] || [ -z "$KAGGLE_KEY" ]; then
-            echo "ERROR: Kaggle credentials are missing."
-            exit 1
-          fi
-
-          echo "Kaggle credentials are configured."
-
-      - name: Submit GPU kernel to Kaggle
+      - name: Submit kernel to Kaggle
+        id: submit
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
-          set -euo pipefail
-
           kaggle kernels push -p kaggle
 
-          echo "Kaggle submission completed."
-          echo "Kernel: https://www.kaggle.com/code/${KAGGLE_USERNAME}/shorts-pipeline-wan"
-
-      - name: Report submission result
+      - name: Send Telegram notification
         if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SUBMIT_STATUS: ${{ steps.submit.outcome }}
+          JOB_STATUS: ${{ job.status }}
         run: |
-          echo "GitHub Actions submission workflow finished."
+          python - <<'PY'
+          import os
+          import urllib.parse
+          import urllib.request
+
+          token = os.getenv("TELEGRAM_BOT_TOKEN")
+          chat_id = os.getenv("TELEGRAM_CHAT_ID")
+
+          if not token or not chat_id:
+              print("Telegram secrets are missing. Notification skipped.")
+              raise SystemExit(0)
+
+          submit_status = os.getenv("SUBMIT_STATUS", "unknown")
+          job_status = os.getenv("JOB_STATUS", "unknown")
+
+          if submit_status == "success" and job_status == "success":
+              message = (
+                  "✅ KAGGLE SUBMISSION SUCCESS\n\n"
+                  "The AI Historical Shorts kernel was submitted.\n"
+                  "This does NOT yet confirm video generation is complete.\n\n"
+                  "Check the Kaggle kernel for generation progress:\n"
+                  "https://www.kaggle.com/code/apuravjadhav/shorts-pipeline-wan"
+              )
+          else:
+              message = (
+                  "❌ KAGGLE PIPELINE SUBMISSION FAILED\n\n"
+                  f"Submit step: {submit_status}\n"
+                  f"Workflow status: {job_status}\n\n"
+                  "Check GitHub Actions logs:\n"
+                  "https://github.com/stonecrusher1india/Shorts-pipeline/actions"
+              )
+
+          url = f"https://api.telegram.org/bot{token}/sendMessage"
+          data = urllib.parse.urlencode({
+              "chat_id": chat_id,
+              "text": message
+          }).encode()
+
+          request = urllib.request.Request(url, data=data)
+
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  print("Telegram notification sent.")
+                  print(response.read().decode())
+          except Exception as error:
+              print(f"Telegram notification failed: {error}")
+              raise
+          PY
           
