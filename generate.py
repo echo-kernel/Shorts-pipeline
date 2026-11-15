@@ -13,11 +13,31 @@ from google import genai
 
 from ai_video import generate_video
 
-MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+# First try the preferred model. Automatically fall back if unavailable.
+GEMINI_MODELS = [
+    "gemini-3.8-flash",
+    "gemini-3.7-flash",
+    "gemini-3.6-flash",
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-3-flash-preview",
+]
+
+# Optional: place a preferred model first using the GitHub workflow variable.
+PREFERRED_MODEL = os.getenv("GEMINI_MODEL", "").strip()
+
+if PREFERRED_MODEL:
+    GEMINI_MODELS = [
+        PREFERRED_MODEL
+    ] + [m for m in GEMINI_MODELS if m != PREFERRED_MODEL]
+
 TOPIC = os.getenv(
     "VIDEO_TOPIC",
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
+
 VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
 
 OUTPUT_DIR = Path("output")
@@ -35,19 +55,20 @@ class TelegramProgress:
         self.stage_started = self.started
         self.stage_times = {}
         self.retries = 0
+        self.current_stage = None
+        self.active_model = "Not selected"
 
     def enabled(self):
         return bool(self.bot and self.chat)
 
-    def send(self, text):
+    def send(self, message):
         if not self.enabled():
-            print("Telegram progress disabled: missing Telegram secrets.")
             return
 
         try:
             response = requests.post(
                 f"https://api.telegram.org/bot{self.bot}/sendMessage",
-                json={"chat_id": self.chat, "text": text},
+                json={"chat_id": self.chat, "text": message},
                 timeout=20
             )
             response.raise_for_status()
@@ -55,49 +76,52 @@ class TelegramProgress:
 
             if data.get("ok"):
                 self.message_id = data["result"]["message_id"]
+
         except Exception as exc:
-            print(f"Telegram progress send failed: {exc}")
+            print(f"Telegram send error: {exc}")
 
     def update(self, percent, stage, detail=""):
         elapsed = int(time.monotonic() - self.started)
         stage_elapsed = int(time.monotonic() - self.stage_started)
 
-        text = (
-            f"🎬 AI HISTORICAL SHORTS\n\n"
+        message = (
+            "🎬 AI HISTORICAL SHORTS\n\n"
             f"Progress: {percent}%\n"
             f"Stage: {stage}\n"
             f"{detail}\n\n"
-            f"Current stage time: {stage_elapsed}s\n"
-            f"Total elapsed: {elapsed}s\n"
+            f"Gemini model: {self.active_model}\n"
+            f"Stage time: {stage_elapsed}s\n"
+            f"Total time: {elapsed}s\n"
             f"Retries: {self.retries}"
         )
 
-        print(text)
+        print(message)
 
         if not self.enabled():
             return
 
         try:
             if self.message_id is None:
-                self.send(text)
+                self.send(message)
             else:
                 response = requests.post(
                     f"https://api.telegram.org/bot{self.bot}/editMessageText",
                     json={
                         "chat_id": self.chat,
                         "message_id": self.message_id,
-                        "text": text
+                        "text": message
                     },
                     timeout=20
                 )
                 response.raise_for_status()
+
         except Exception as exc:
-            print(f"Telegram progress update failed: {exc}")
+            print(f"Telegram update error: {exc}")
 
     def start_stage(self, percent, stage, detail=""):
         now = time.monotonic()
 
-        if hasattr(self, "current_stage"):
+        if self.current_stage:
             self.stage_times[self.current_stage] = (
                 self.stage_times.get(self.current_stage, 0)
                 + now - self.stage_started
@@ -110,13 +134,14 @@ class TelegramProgress:
     def finish(self, success, title="", error=""):
         now = time.monotonic()
 
-        if hasattr(self, "current_stage"):
+        if self.current_stage:
             self.stage_times[self.current_stage] = (
                 self.stage_times.get(self.current_stage, 0)
                 + now - self.stage_started
             )
 
         total = int(now - self.started)
+
         timings = "\n".join(
             f"• {name}: {int(seconds)}s"
             for name, seconds in self.stage_times.items()
@@ -126,15 +151,16 @@ class TelegramProgress:
             message = (
                 "✅ AI HISTORICAL SHORTS: COMPLETE\n\n"
                 f"Title: {title}\n"
+                f"Gemini model: {self.active_model}\n"
                 f"Total time: {total}s\n"
                 f"Retries: {self.retries}\n\n"
                 f"Stage timings:\n{timings}"
             )
-            self.update(100, "Completed", f"Title: {title}")
         else:
             message = (
                 "❌ AI HISTORICAL SHORTS: FAILED\n\n"
                 f"Error: {error}\n"
+                f"Last Gemini model: {self.active_model}\n"
                 f"Total time: {total}s\n"
                 f"Retries: {self.retries}\n\n"
                 f"Stage timings:\n{timings}"
@@ -150,7 +176,7 @@ class TelegramProgress:
                     timeout=20
                 ).raise_for_status()
             except Exception as exc:
-                print(f"Telegram final report failed: {exc}")
+                print(f"Telegram final report error: {exc}")
 
 
 tracker = TelegramProgress()
@@ -172,14 +198,39 @@ def get_duration(filename):
 
 
 def clean_json(text):
+    if not text:
+        raise RuntimeError("Gemini returned an empty response.")
+
     text = text.strip()
     text = re.sub(r"^```(?:json)?", "", text)
     text = re.sub(r"```$", "", text)
+
     return json.loads(text.strip())
+
+
+def is_temporary_error(error):
+    message = str(error).lower()
+
+    temporary_terms = [
+        "429",
+        "500",
+        "502",
+        "503",
+        "504",
+        "resource exhausted",
+        "rate limit",
+        "overloaded",
+        "temporarily unavailable",
+        "deadline exceeded",
+        "timeout"
+    ]
+
+    return any(term in message for term in temporary_terms)
 
 
 def create_story():
     api_key = os.getenv("GEMINI_API_KEY")
+
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY secret is missing.")
 
@@ -189,7 +240,7 @@ def create_story():
 Create a historically responsible YouTube Short about:
 {TOPIC}
 
-Return ONLY valid JSON:
+Return ONLY valid JSON in this exact structure:
 {{
   "title": "Short engaging title",
   "voiceover": "Hindi narration, approximately 105 to 120 words",
@@ -208,23 +259,80 @@ Requirements:
 - Describe clothing, architecture, environment, lighting and camera movement.
 - No modern objects, text, logos, watermarks or fantasy elements.
 - Vertical 9:16 composition.
+- Return JSON only, without Markdown fences.
 """
 
-    response = client.models.generate_content(
-        model=MODEL,
-        contents=prompt,
-        config={"response_mime_type": "application/json"}
+    failures = []
+
+    for model in GEMINI_MODELS:
+        tracker.active_model = model
+        tracker.update(
+            8,
+            "Trying Gemini model",
+            f"Testing: {model}"
+        )
+
+        # Two attempts for temporary errors, one for unavailable models.
+        for attempt in range(1, 3):
+            try:
+                print(
+                    f"Trying Gemini model {model}, "
+                    f"attempt {attempt}/2"
+                )
+
+                response = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config={
+                        "response_mime_type": "application/json"
+                    }
+                )
+
+                data = clean_json(response.text)
+
+                if len(data.get("scenes", [])) != 4:
+                    raise RuntimeError(
+                        "Gemini did not return exactly four scenes."
+                    )
+
+                if not data.get("voiceover"):
+                    raise RuntimeError(
+                        "Gemini returned an empty narration."
+                    )
+
+                data["gemini_model"] = model
+                tracker.active_model = model
+
+                print(f"Gemini success: {model}")
+                return data
+
+            except Exception as exc:
+                error_text = f"{type(exc).__name__}: {exc}"
+                print(f"Gemini {model} failed: {error_text}")
+
+                failures.append(f"{model}: {error_text[:250]}")
+                tracker.retries += 1
+
+                if is_temporary_error(exc) and attempt == 1:
+                    wait = 15
+                    tracker.update(
+                        8,
+                        "Gemini temporary error",
+                        f"{model} failed. Retrying in {wait}s"
+                    )
+                    time.sleep(wait)
+                    continue
+
+                # Move to the next model after this failure.
+                break
+
+    summary = "\n".join(failures[-7:])
+
+    raise RuntimeError(
+        "All configured Gemini models failed. "
+        "Check API access, billing/free-tier quota and API key.\n"
+        + summary
     )
-
-    data = clean_json(response.text)
-
-    if len(data.get("scenes", [])) != 4:
-        raise RuntimeError("Gemini did not return exactly four scenes.")
-
-    if not data.get("voiceover"):
-        raise RuntimeError("Gemini returned an empty narration.")
-
-    return data
 
 
 async def create_voice(text, filename):
@@ -249,10 +357,15 @@ def generate_voice(text):
 
 def make_srt(text, duration, filename):
     words = text.split()
+
     if not words:
         raise RuntimeError("Narration has no words.")
 
-    groups = [words[i:i + 5] for i in range(0, len(words), 5)]
+    groups = [
+        words[i:i + 5]
+        for i in range(0, len(words), 5)
+    ]
+
     segment_duration = duration / len(groups)
 
     def stamp(seconds):
@@ -261,14 +374,24 @@ def make_srt(text, duration, filename):
         minutes = (milliseconds % 3600000) // 60000
         seconds_part = (milliseconds % 60000) // 1000
         millis = milliseconds % 1000
-        return f"{hours:02}:{minutes:02}:{seconds_part:02},{millis:03}"
+
+        return (
+            f"{hours:02}:{minutes:02}:"
+            f"{seconds_part:02},{millis:03}"
+        )
 
     with open(filename, "w", encoding="utf-8") as file:
         for index, group in enumerate(groups):
             start = index * segment_duration
-            end = min(duration, (index + 1) * segment_duration)
+            end = min(
+                duration,
+                (index + 1) * segment_duration
+            )
+
             file.write(f"{index + 1}\n")
-            file.write(f"{stamp(start)} --> {stamp(end)}\n")
+            file.write(
+                f"{stamp(start)} --> {stamp(end)}\n"
+            )
             file.write(" ".join(group) + "\n\n")
 
 
@@ -362,6 +485,7 @@ def join_clips(clips):
 def assemble_final_video(joined, voice, narration):
     voice_duration = get_duration(voice)
     subtitles = WORK_DIR / "captions.srt"
+
     make_srt(narration, voice_duration, subtitles)
 
     final_video = OUTPUT_DIR / "historical_short.mp4"
@@ -395,7 +519,9 @@ def assemble_final_video(joined, voice, narration):
     ])
 
     if not final_video.exists() or final_video.stat().st_size < 10000:
-        raise RuntimeError("Final video was not created correctly.")
+        raise RuntimeError(
+            "Final video was not created correctly."
+        )
 
     return final_video
 
@@ -405,7 +531,7 @@ def send_telegram(video, title):
     chat = os.getenv("TELEGRAM_CHAT_ID")
 
     if not bot or not chat:
-        print("Telegram video upload skipped: Telegram secrets missing.")
+        print("Telegram video upload skipped: secrets missing.")
         return
 
     with open(video, "rb") as file:
@@ -413,7 +539,10 @@ def send_telegram(video, title):
             f"https://api.telegram.org/bot{bot}/sendVideo",
             data={
                 "chat_id": chat,
-                "caption": f"🎬 {title}\nYour AI historical Short is ready!"
+                "caption": (
+                    f"🎬 {title}\n"
+                    "Your AI historical Short is ready!"
+                )
             },
             files={"video": file},
             timeout=(30, 600)
@@ -422,21 +551,38 @@ def send_telegram(video, title):
     response.raise_for_status()
 
     if not response.json().get("ok"):
-        raise RuntimeError(f"Telegram upload failed: {response.text}")
+        raise RuntimeError(
+            f"Telegram upload failed: {response.text}"
+        )
 
 
 def main():
     try:
         tracker.start_stage(2, "Starting pipeline")
 
-        tracker.start_stage(5, "Creating historical story")
+        tracker.start_stage(
+            5,
+            "Creating historical story",
+            "Automatic Gemini fallback enabled"
+        )
+
         story = create_story()
 
         print("Title:", story["title"])
+        print("Gemini model:", story["gemini_model"])
         print("Narration:", story["voiceover"])
 
-        with open(OUTPUT_DIR / "story.json", "w", encoding="utf-8") as file:
-            json.dump(story, file, ensure_ascii=False, indent=2)
+        with open(
+            OUTPUT_DIR / "story.json",
+            "w",
+            encoding="utf-8"
+        ) as file:
+            json.dump(
+                story,
+                file,
+                ensure_ascii=False,
+                indent=2
+            )
 
         tracker.start_stage(18, "Generating Hindi narration")
         voice = generate_voice(story["voiceover"])
@@ -450,24 +596,40 @@ def main():
         tracker.start_stage(78, "Joining scenes")
         joined = join_clips(normalized)
 
-        tracker.start_stage(85, "Adding narration and subtitles")
-        final_video = assemble_final_video(
-            joined, voice, story["voiceover"]
+        tracker.start_stage(
+            85,
+            "Adding narration and subtitles"
         )
 
-        tracker.start_stage(94, "Uploading final video to Telegram")
+        final_video = assemble_final_video(
+            joined,
+            voice,
+            story["voiceover"]
+        )
+
+        tracker.start_stage(
+            94,
+            "Uploading final video to Telegram"
+        )
+
         send_telegram(final_video, story["title"])
 
-        tracker.finish(True, title=story["title"])
+        tracker.finish(
+            True,
+            title=story["title"]
+        )
 
         print("SUCCESS!")
         print("Final video:", final_video)
 
     except Exception as exc:
-        tracker.finish(False, error=f"{type(exc).__name__}: {exc}")
+        tracker.finish(
+            False,
+            error=f"{type(exc).__name__}: {exc}"
+        )
         raise
 
 
 if __name__ == "__main__":
     main()
-                                     
+            
