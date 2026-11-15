@@ -14,7 +14,7 @@ from google import genai
 from ai_video import generate_video
 
 
-# First try the preferred model. Automatically fall back if unavailable.
+# Gemini automatic fallback
 GEMINI_MODELS = [
     "gemini-3.8-flash",
     "gemini-3.7-flash",
@@ -25,13 +25,15 @@ GEMINI_MODELS = [
     "gemini-3-flash-preview",
 ]
 
-# Optional: place a preferred model first using the GitHub workflow variable.
 PREFERRED_MODEL = os.getenv("GEMINI_MODEL", "").strip()
 
 if PREFERRED_MODEL:
     GEMINI_MODELS = [
         PREFERRED_MODEL
-    ] + [m for m in GEMINI_MODELS if m != PREFERRED_MODEL]
+    ] + [
+        model for model in GEMINI_MODELS
+        if model != PREFERRED_MODEL
+    ]
 
 TOPIC = os.getenv(
     "VIDEO_TOPIC",
@@ -42,11 +44,13 @@ VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
+
 OUTPUT_DIR.mkdir(exist_ok=True)
 WORK_DIR.mkdir(exist_ok=True)
 
 
 class TelegramProgress:
+
     def __init__(self):
         self.bot = os.getenv("TELEGRAM_BOT_TOKEN", "")
         self.chat = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -68,9 +72,13 @@ class TelegramProgress:
         try:
             response = requests.post(
                 f"https://api.telegram.org/bot{self.bot}/sendMessage",
-                json={"chat_id": self.chat, "text": message},
+                json={
+                    "chat_id": self.chat,
+                    "text": message
+                },
                 timeout=20
             )
+
             response.raise_for_status()
             data = response.json()
 
@@ -113,6 +121,7 @@ class TelegramProgress:
                     },
                     timeout=20
                 )
+
                 response.raise_for_status()
 
         except Exception as exc:
@@ -129,6 +138,7 @@ class TelegramProgress:
 
         self.current_stage = stage
         self.stage_started = now
+
         self.update(percent, stage, detail)
 
     def finish(self, success, title="", error=""):
@@ -172,9 +182,13 @@ class TelegramProgress:
             try:
                 requests.post(
                     f"https://api.telegram.org/bot{self.bot}/sendMessage",
-                    json={"chat_id": self.chat, "text": message},
+                    json={
+                        "chat_id": self.chat,
+                        "text": message
+                    },
                     timeout=20
                 ).raise_for_status()
+
             except Exception as exc:
                 print(f"Telegram final report error: {exc}")
 
@@ -189,11 +203,13 @@ def run_command(command):
 
 def get_duration(filename):
     result = subprocess.check_output([
-        "ffprobe", "-v", "error",
+        "ffprobe",
+        "-v", "error",
         "-show_entries", "format=duration",
         "-of", "default=noprint_wrappers=1:nokey=1",
         str(filename)
     ])
+
     return float(result.decode().strip())
 
 
@@ -211,7 +227,7 @@ def clean_json(text):
 def is_temporary_error(error):
     message = str(error).lower()
 
-    temporary_terms = [
+    terms = [
         "429",
         "500",
         "502",
@@ -225,7 +241,7 @@ def is_temporary_error(error):
         "timeout"
     ]
 
-    return any(term in message for term in temporary_terms)
+    return any(term in message for term in terms)
 
 
 def create_story():
@@ -240,7 +256,8 @@ def create_story():
 Create a historically responsible YouTube Short about:
 {TOPIC}
 
-Return ONLY valid JSON in this exact structure:
+Return ONLY valid JSON:
+
 {{
   "title": "Short engaging title",
   "voiceover": "Hindi narration, approximately 105 to 120 words",
@@ -254,7 +271,8 @@ Return ONLY valid JSON in this exact structure:
 
 Requirements:
 - Natural Hindi documentary narration.
-- Historically accurate; do not invent quotations or events.
+- Historically accurate.
+- Do not invent quotations or events.
 - Four visually different realistic cinematic scenes.
 - Describe clothing, architecture, environment, lighting and camera movement.
 - No modern objects, text, logos, watermarks or fantasy elements.
@@ -265,15 +283,17 @@ Requirements:
     failures = []
 
     for model in GEMINI_MODELS:
+
         tracker.active_model = model
+
         tracker.update(
             8,
             "Trying Gemini model",
             f"Testing: {model}"
         )
 
-        # Two attempts for temporary errors, one for unavailable models.
         for attempt in range(1, 3):
+
             try:
                 print(
                     f"Trying Gemini model {model}, "
@@ -297,40 +317,51 @@ Requirements:
 
                 if not data.get("voiceover"):
                     raise RuntimeError(
-                        "Gemini returned an empty narration."
+                        "Gemini returned empty narration."
                     )
 
                 data["gemini_model"] = model
+
                 tracker.active_model = model
 
                 print(f"Gemini success: {model}")
+
                 return data
 
             except Exception as exc:
-                error_text = f"{type(exc).__name__}: {exc}"
-                print(f"Gemini {model} failed: {error_text}")
 
-                failures.append(f"{model}: {error_text[:250]}")
+                error_text = f"{type(exc).__name__}: {exc}"
+
+                print(
+                    f"Gemini {model} failed: {error_text}"
+                )
+
+                failures.append(
+                    f"{model}: {error_text[:250]}"
+                )
+
                 tracker.retries += 1
 
                 if is_temporary_error(exc) and attempt == 1:
+
                     wait = 15
+
                     tracker.update(
                         8,
                         "Gemini temporary error",
                         f"{model} failed. Retrying in {wait}s"
                     )
+
                     time.sleep(wait)
                     continue
 
-                # Move to the next model after this failure.
                 break
 
     summary = "\n".join(failures[-7:])
 
     raise RuntimeError(
         "All configured Gemini models failed. "
-        "Check API access, billing/free-tier quota and API key.\n"
+        "Check API access, quota and API key.\n"
         + summary
     )
 
@@ -342,12 +373,16 @@ async def create_voice(text, filename):
         rate="-5%",
         volume="+0%"
     )
+
     await communicate.save(str(filename))
 
 
 def generate_voice(text):
     voice_file = WORK_DIR / "narration.mp3"
-    asyncio.run(create_voice(text, voice_file))
+
+    asyncio.run(
+        create_voice(text, voice_file)
+    )
 
     if not voice_file.exists() or voice_file.stat().st_size < 1000:
         raise RuntimeError("Voice generation failed.")
@@ -370,6 +405,7 @@ def make_srt(text, duration, filename):
 
     def stamp(seconds):
         milliseconds = int(seconds * 1000)
+
         hours = milliseconds // 3600000
         minutes = (milliseconds % 3600000) // 60000
         seconds_part = (milliseconds % 60000) // 1000
@@ -381,8 +417,11 @@ def make_srt(text, duration, filename):
         )
 
     with open(filename, "w", encoding="utf-8") as file:
+
         for index, group in enumerate(groups):
+
             start = index * segment_duration
+
             end = min(
                 duration,
                 (index + 1) * segment_duration
@@ -392,6 +431,7 @@ def make_srt(text, duration, filename):
             file.write(
                 f"{stamp(start)} --> {stamp(end)}\n"
             )
+
             file.write(" ".join(group) + "\n\n")
 
 
@@ -399,7 +439,9 @@ def create_clips(scenes):
     clips = []
 
     for index, scene in enumerate(scenes, start=1):
+
         output = WORK_DIR / f"scene_{index}.mp4"
+
         percent = 25 + index * 9
 
         tracker.start_stage(
@@ -408,8 +450,14 @@ def create_clips(scenes):
             f"Completed scenes: {index - 1}/4"
         )
 
-        def retry_callback(attempt, maximum, error, wait):
+        def retry_callback(
+            attempt,
+            maximum,
+            error,
+            wait
+        ):
             tracker.retries += 1
+
             tracker.update(
                 percent,
                 f"Retrying scene {index}/4",
@@ -434,6 +482,7 @@ def normalize_clips(clips):
     normalized = []
 
     for index, clip in enumerate(clips, start=1):
+
         tracker.update(
             65 + index * 3,
             "Normalizing clips",
@@ -464,9 +513,16 @@ def normalize_clips(clips):
 def join_clips(clips):
     concat_file = WORK_DIR / "clips.txt"
 
-    with open(concat_file, "w", encoding="utf-8") as file:
+    with open(
+        concat_file,
+        "w",
+        encoding="utf-8"
+    ) as file:
+
         for clip in clips:
-            file.write(f"file '{clip.resolve()}'\n")
+            file.write(
+                f"file '{clip.resolve()}'\n"
+            )
 
     joined = WORK_DIR / "joined.mp4"
 
@@ -483,15 +539,32 @@ def join_clips(clips):
 
 
 def assemble_final_video(joined, voice, narration):
+
     voice_duration = get_duration(voice)
+
     subtitles = WORK_DIR / "captions.srt"
 
-    make_srt(narration, voice_duration, subtitles)
+    make_srt(
+        narration,
+        voice_duration,
+        subtitles
+    )
+
+    # IMPORTANT FIX:
+    # FFmpeg must use the actual subtitle file path.
+    subtitle_path = subtitles.resolve().as_posix()
+
+    if not subtitles.exists():
+        raise RuntimeError(
+            f"Subtitle file missing: {subtitle_path}"
+        )
+
+    print("Subtitle file:", subtitle_path)
 
     final_video = OUTPUT_DIR / "historical_short.mp4"
 
     subtitle_filter = (
-        "subtitles=captions.srt:"
+        f"subtitles='{subtitle_path}':"
         "force_style='FontName=DejaVu Sans,"
         "FontSize=18,PrimaryColour=&H00FFFFFF,"
         "OutlineColour=&H00000000,BorderStyle=1,"
@@ -518,7 +591,10 @@ def assemble_final_video(joined, voice, narration):
         str(final_video.resolve())
     ])
 
-    if not final_video.exists() or final_video.stat().st_size < 10000:
+    if (
+        not final_video.exists()
+        or final_video.stat().st_size < 10000
+    ):
         raise RuntimeError(
             "Final video was not created correctly."
         )
@@ -527,14 +603,18 @@ def assemble_final_video(joined, voice, narration):
 
 
 def send_telegram(video, title):
+
     bot = os.getenv("TELEGRAM_BOT_TOKEN")
     chat = os.getenv("TELEGRAM_CHAT_ID")
 
     if not bot or not chat:
-        print("Telegram video upload skipped: secrets missing.")
+        print(
+            "Telegram video upload skipped: secrets missing."
+        )
         return
 
     with open(video, "rb") as file:
+
         response = requests.post(
             f"https://api.telegram.org/bot{bot}/sendVideo",
             data={
@@ -544,7 +624,9 @@ def send_telegram(video, title):
                     "Your AI historical Short is ready!"
                 )
             },
-            files={"video": file},
+            files={
+                "video": file
+            },
             timeout=(30, 600)
         )
 
@@ -557,8 +639,13 @@ def send_telegram(video, title):
 
 
 def main():
+
     try:
-        tracker.start_stage(2, "Starting pipeline")
+
+        tracker.start_stage(
+            2,
+            "Starting pipeline"
+        )
 
         tracker.start_stage(
             5,
@@ -577,6 +664,7 @@ def main():
             "w",
             encoding="utf-8"
         ) as file:
+
             json.dump(
                 story,
                 file,
@@ -584,16 +672,36 @@ def main():
                 indent=2
             )
 
-        tracker.start_stage(18, "Generating Hindi narration")
-        voice = generate_voice(story["voiceover"])
+        tracker.start_stage(
+            18,
+            "Generating Hindi narration"
+        )
 
-        tracker.start_stage(25, "Preparing four AI scenes")
-        clips = create_clips(story["scenes"])
+        voice = generate_voice(
+            story["voiceover"]
+        )
 
-        tracker.start_stage(65, "Normalizing video clips")
+        tracker.start_stage(
+            25,
+            "Preparing four AI scenes"
+        )
+
+        clips = create_clips(
+            story["scenes"]
+        )
+
+        tracker.start_stage(
+            65,
+            "Normalizing video clips"
+        )
+
         normalized = normalize_clips(clips)
 
-        tracker.start_stage(78, "Joining scenes")
+        tracker.start_stage(
+            78,
+            "Joining scenes"
+        )
+
         joined = join_clips(normalized)
 
         tracker.start_stage(
@@ -612,7 +720,10 @@ def main():
             "Uploading final video to Telegram"
         )
 
-        send_telegram(final_video, story["title"])
+        send_telegram(
+            final_video,
+            story["title"]
+        )
 
         tracker.finish(
             True,
@@ -623,13 +734,15 @@ def main():
         print("Final video:", final_video)
 
     except Exception as exc:
+
         tracker.finish(
             False,
             error=f"{type(exc).__name__}: {exc}"
         )
+
         raise
 
 
 if __name__ == "__main__":
     main()
-            
+        
