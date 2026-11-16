@@ -1,0 +1,102 @@
+name: Deploy JEE Telegram Quiz Bot
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - jee-telegram-quiz
+    paths:
+      - "jee-telegram-bot/**"
+      - ".github/workflows/deploy-jee-telegram-bot.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Validate required secrets
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          test -n "$TELEGRAM_TOKEN" || (echo "Missing TELEGRAM_TOKEN" && exit 1)
+          test -n "$GEMINI_API_KEY" || (echo "Missing GEMINI_API_KEY" && exit 1)
+          test -n "$CF_API_TOKEN" || (echo "Missing CLOUDFLARE_API_TOKEN" && exit 1)
+          test -n "$CF_ACCOUNT_ID" || (echo "Missing CLOUDFLARE_ACCOUNT_ID" && exit 1)
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Wrangler
+        run: npm install --global wrangler@4
+
+      - name: Create or find KV namespace
+        id: kv
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          API="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces"
+          LIST="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "$API")"
+          ID="$(printf '%s' "$LIST" | jq -r '.result[]? | select(.title == "jee-telegram-quiz-state") | .id' | head -n 1)"
+          if [ -z "$ID" ]; then
+            CREATED="$(curl --fail --silent --show-error \
+              -X POST "$API" \
+              -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+              -H "Content-Type: application/json" \
+              --data '{"title":"jee-telegram-quiz-state"}')"
+            ID="$(printf '%s' "$CREATED" | jq -r '.result.id')"
+          fi
+          test -n "$ID" && test "$ID" != "null"
+          sed -i "s/REPLACE_WITH_KV_NAMESPACE_ID/$ID/" jee-telegram-bot/wrangler.toml
+          echo "KV namespace ready."
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          npx wrangler deploy --config jee-telegram-bot/wrangler.toml
+
+      - name: Configure Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          WEBHOOK_SECRET="$(openssl rand -hex 32)"
+          printf '%s' "$TELEGRAM_TOKEN" | npx wrangler secret put TELEGRAM_TOKEN --config jee-telegram-bot/wrangler.toml
+          printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config jee-telegram-bot/wrangler.toml
+          printf '%s' "$WEBHOOK_SECRET" | npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config jee-telegram-bot/wrangler.toml
+          echo "::add-mask::$WEBHOOK_SECRET"
+          echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
+
+      - name: Set Telegram webhook
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          WORKER_URL="https://jee-telegram-quiz.$(npx wrangler whoami 2>/dev/null | awk '/workers.dev/ {print $NF; exit}').workers.dev"
+          # Prefer the deployed URL reported by Wrangler; if unavailable, read it from the deployment output.
+          if [[ "$WORKER_URL" != https://jee-telegram-quiz.*.workers.dev ]]; then
+            echo "Could not determine workers.dev URL. Open the Worker overview in Cloudflare and set the webhook manually."
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
+            --data-urlencode "url=$WORKER_URL" \
+            --data-urlencode "secret_token=$WEBHOOK_SECRET"
