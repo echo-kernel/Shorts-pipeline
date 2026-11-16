@@ -439,7 +439,8 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     text: (settings.mode === "ai" ? "🤖 AI practice test ready." : "📘 PYQ paper ready.") +
       "\nQuestions: " + chosen.length +
       (state.timed ? "\nTime limit: " + Math.floor(state.durationSeconds / 60) + " minutes" : "\nMode: Timeless (no countdown)") +
-      "\nChoose an option, use Skip/Previous/Mark for Review, and submit when finished. Answers and solutions stay hidden until submission."
+      "\nChoose an option, use Skip/Previous/Mark for Review, and submit when finished. Answers and solutions stay hidden until submission.",
+    reply_markup: { remove_keyboard: true }
   });
   state.messageId = await renderQuestion(env, chatId, state);
   await saveState(env, chatId, state);
