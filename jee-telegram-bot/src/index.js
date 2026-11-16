@@ -152,7 +152,7 @@ async function handleMessage(env, message) {
   if (text === "/start" || text === "/help") {
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "Welcome to JEE Main PYQ Quiz Bot!\n\nSend:\nstart quiz question — mixed quiz\n/physics — Physics\n/chemistry — Chemistry\n/maths — Mathematics\n/stop — stop your quiz"
+      text: "Welcome to JEE Main PYQ Quiz Bot!\n\nSend:\nstart quiz question — mixed quiz\n/physics — Physics\n/chemistry — Chemistry\n/maths — Mathematics\n/topics — list verified topics\n/topic physics rotational-motion — topic-wise quiz\n/stop — stop your quiz"
     });
   } else if (text === "start quiz question" || text === "/quiz") {
     await startQuiz(env, chatId, null);
