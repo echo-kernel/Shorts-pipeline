@@ -10,7 +10,7 @@ const MAIN_MENU = {
   ],
   resize_keyboard: true,
   is_persistent: true,
-  input_field_placeholder: "Choose a JEE quiz section"
+  input_field_placeholder: "Type: 20 Physics questions from Rotation"
 };
 
 async function showMainMenu(env, chatId, message = "Choose a section from the menu below.") {
@@ -271,7 +271,7 @@ async function handleMessage(env, message) {
   if (text === "/start") {
     await showMainMenu(env, chatId, "Welcome to JEE Main PYQ Quiz Bot!\nChoose a section using the menu button beside the message box.");
   } else if (text === "/help" || text === "🆘 help") {
-    await showMainMenu(env, chatId, "JEE Main Quiz Bot\n\n🎯 Mixed Quiz: random questions from all subjects\n📚 Subjects: choose Physics, Chemistry or Maths\n📖 Chapter Quiz: start a topic-wise quiz\n📊 Available Topics: see chapters currently in the verified bank\n🛑 Stop Quiz: end your current quiz");
+    await showMainMenu(env, chatId, "JEE Main Quiz Bot\n\n🎯 Mixed Quiz: random questions from all subjects\n📚 Subjects: choose Physics, Chemistry or Maths\n📖 Chapter Quiz: start a topic-wise quiz\n📊 Available Topics: browse chapters in the verified bank\n\n🤖 You can type naturally, e.g. “Give me 20 Physics questions from Rotational Motion” or “10 mixed JEE questions”.\n🛑 Stop Quiz: end your current quiz");
   } else if (text === "📚 subjects") {
     await showSubjects(env, chatId);
   } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
