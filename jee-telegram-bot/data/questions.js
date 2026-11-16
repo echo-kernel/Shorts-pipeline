@@ -1052,7 +1052,7 @@ const questions = [
     question: "19.5 g fluoroacetic acid (molar mass 78 g mol⁻¹) is dissolved in 500 g water at 298 K. Freezing-point depression is 1°C. For water Kf=1.86 K kg mol⁻¹, find Ka (assume molarity and molality equal).",
     options: ["10⁻⁶","4×10⁻⁴","3×10⁻⁵","3×10⁻³"],
     answer: 3,
-    explanation: "The analytical molality is 0.5 mol kg⁻¹. ΔTf/m=2 gives van't Hoff factor i=2, so the acid is effectively fully dissociated under the stated approximation; the reported Ka option is 3×10⁻³."
+    explanation: "The molality is 0.5 mol kg⁻¹, so i=ΔTf/(Kf·m)=1/(1.86×0.5)≈1.075. Thus α≈0.075 and Ka≈Cα²/(1−α)≈3×10⁻³."
   },
   {
     id: "2026-apr02-shift1-chemistry-q56",
