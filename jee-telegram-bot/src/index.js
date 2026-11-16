@@ -683,7 +683,7 @@ async function handleMessage(env, message) {
   const activeQuiz = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   const activeQuestion = activeQuiz?.questions?.[activeQuiz.index];
   if (activeQuestion?.question_type === "numeric" && !activeQuiz.reviewMode &&
-      /^[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[-+]?\\d+)?$/i.test(raw.replace(/,/g, ""))) {
+      /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/i.test(raw.replace(/,/g, ""))) {
     const numericValue = Number(raw.replace(/,/g, ""));
     activeQuiz.answers = activeQuiz.answers || {};
     activeQuiz.answers[activeQuiz.index] = numericValue;
