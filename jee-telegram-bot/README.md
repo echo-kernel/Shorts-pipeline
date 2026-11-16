@@ -9,7 +9,11 @@ This bot runs as a Cloudflare Worker, receives Telegram updates through a webhoo
 - `/physics` — Physics quiz
 - `/chemistry` — Chemistry quiz
 - `/maths` — Mathematics quiz
+- `/topics` — list subject/topic combinations present in the verified bank
+- `/topic physics rotational-motion` — quiz a specific topic (use subject followed by the topic slug)
 - `/stop` — stop the current quiz
+
+Topic-wise questions must include a `topic` or `chapter` string, for example `"topic": "Rotational Motion"`. The `/topics` command is generated from topics that actually have verified questions in the bank; it does not advertise empty chapters.
 
 ## Required GitHub Actions repository secrets
 
@@ -24,31 +28,37 @@ The deployment workflow creates or reuses the KV namespace and deploys the Worke
 
 ## Question bank
 
-The initial bank is intentionally empty. Do not label AI-generated or unverified content as a JEE Main PYQ.
+The bank must contain only questions checked against an official NTA question paper and its final answer key. Each entry must include:
 
-Add entries to `data/questions.js` only after checking the question against an official paper and its final answer key:
+- `id`, `verified: true`, `source_url`, `year`, `shift`
+- `subject`: `physics`, `chemistry`, or `maths`
+- `topic` or `chapter`: a chapter/topic label
+- `question`, exactly four `options`, zero-based `answer` (0–3), and an `explanation`
+
+Example structure (placeholder only; not a real PYQ):
 
 ```js
-export default [
-  {
-    id: "2025-jan-shift-1-physics-q1",
-    verified: true,
-    source_url: "https://jeemain.nta.nic.in/",
-    year: "2025",
-    shift: "January Shift 1",
-    subject: "physics",
-    question: "Exact question text from the verified paper",
-    options: ["Option A", "Option B", "Option C", "Option D"],
-    answer: 0,
-    explanation: "Verified solution or concise derivation"
-  }
-];
+{
+  id: "2025-jan-shift-1-physics-q1",
+  verified: true,
+  source_url: "https://jeemain.nta.nic.in/",
+  year: "2025",
+  shift: "January Shift 1",
+  subject: "physics",
+  topic: "Rotational Motion",
+  question: "Exact question text from the verified paper",
+  options: ["Option A", "Option B", "Option C", "Option D"],
+  answer: 0,
+  explanation: "Verified solution or concise derivation"
+}
 ```
 
-The `answer` value is zero-based: 0 means A, 1 means B, 2 means C, 3 means D. Each question must include its official paper/source URL and `verified: true`. Gemini may explain the stored correct answer, but it must not decide or overwrite the answer key.
+The `answer` value is zero-based: 0 means A, 1 means B, 2 means C, 3 means D. Gemini may explain the stored correct answer, but it must not decide or overwrite the answer key. The question bank is initially empty; do not label AI-generated or unverified content as a JEE Main PYQ.
+
+## Official sources
+
+Use the [official JEE Main website](https://jeemain.nta.nic.in/) and NTA's official notices/answer keys. Some historical question papers and recorded responses were available only through candidate login or temporary challenge windows. Add only source-backed questions for which the exact paper and final answer key can be verified.
 
 ## Deployment
 
 Run **Actions → Deploy JEE Telegram Quiz Bot → Run workflow** on branch `jee-telegram-quiz`.
-
-The workflow creates the Cloudflare KV namespace if it does not already exist. The first successful deployment may need a short time for the workers.dev hostname to become active; if webhook setup fails, rerun the workflow after the Worker is visible in Cloudflare.
