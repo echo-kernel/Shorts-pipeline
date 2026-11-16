@@ -423,6 +423,32 @@ const questions = [
     answer: 0,
     explanation: "For complete absorption in a medium, radiation pressure is nI/c. Thus p = 3 × (6 × 10⁸)/(3 × 10⁸) = 6 N/m²."
   }
-
+,
+  {
+    id: "2026-apr02-shift1-maths-q2",
+    verified: true,
+    source_url: "https://cdnbbsr.s3waas.gov.in/s3f8e59f4b2fe7c5705bf878bbd494ccdf/uploads/2026/04/202604092096865379.pdf",
+    year: "2026",
+    shift: "2 April · Shift 1",
+    subject: "maths",
+    topic: "Complex Numbers",
+    question: "Let x and y be real numbers such that 50(2x/(1+3i) − y/(1−2i)) = 31 + 17i, where i = √−1. Then the value of 10(x − 3y) is:",
+    options: ["20", "31", "35", "75"],
+    answer: 3,
+    explanation: "Rationalise the denominators: 2x/(1+3i) = x(1−3i)/5 and y/(1−2i) = y(1+2i)/5. Equating real and imaginary parts gives 2x−y = 31/10 and −6x−2y = 17/10. Solving gives x = 9/10 and y = −11/5. Hence 10(x−3y) = 75."
+  },
+  {
+    id: "2026-apr02-shift1-maths-q3",
+    verified: true,
+    source_url: "https://cdnbbsr.s3waas.gov.in/s3f8e59f4b2fe7c5705bf878bbd494ccdf/uploads/2026/04/202604092096865379.pdf",
+    year: "2026",
+    shift: "2 April · Shift 1",
+    subject: "maths",
+    topic: "Matrices and Linear Equations",
+    question: "Let α, β ∈ R be such that the system x + 2y + z = 5, 2x + y + αz = 5, 8x + 4y + βz = 18 has no solution. Then β/α is equal to:",
+    options: ["−4", "4", "8", "−8"],
+    answer: 1,
+    explanation: "For inconsistency, the third coefficient row must be a linear combination of the first two while the constants do not follow that same combination. Solving [8,4,β] = k[1,2,1] + l[2,1,α] gives k = 0 and l = 4, so β = 4α. The right-hand side would then be 4×5 = 20, not 18, confirming inconsistency. Therefore β/α = 4."
+  }
 ];
 export default questions;
