@@ -41,14 +41,24 @@ async function telegram(env, method, body) {
 }
 
 function validQuestion(q) {
-  return q && q.verified === true &&
+  const common = q && q.verified === true &&
     typeof q.source_url === "string" && /^https?:\/\//i.test(q.source_url) &&
     ["physics", "chemistry", "maths"].includes(String(q.subject).toLowerCase()) &&
     typeof q.question === "string" &&
-    (typeof q.topic === "string" || typeof q.chapter === "string") &&
-    Array.isArray(q.options) && q.options.length === 4 &&
+    (typeof q.topic === "string" || typeof q.chapter === "string");
+  if (!common) return false;
+  if (q.question_type === "numeric") return Number.isFinite(Number(q.numeric_answer));
+  return Array.isArray(q.options) && q.options.length === 4 &&
     q.options.every(x => typeof x === "string" && x.trim()) &&
     Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4;
+}
+
+function isCorrectAnswer(q, value) {
+  if (q.question_type === "numeric") {
+    return value !== undefined && Number.isFinite(Number(value)) &&
+      Math.abs(Number(value) - Number(q.numeric_answer)) <= Number(q.tolerance ?? 0);
+  }
+  return value === q.answer;
 }
 
 function normalizeTopic(value) {
@@ -411,7 +421,8 @@ async function renderQuestion(env, chatId, state, messageId) {
   const safe = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const header = review ? "📊 JEE MAIN — PAPER REVIEW" : (isAi ? "🤖 AI-GENERATED PRACTICE" : "📘 JEE MAIN PYQ");
   const examLine = !isAi ? ["JEE MAIN", q.year, q.shift].filter(Boolean).join(" | ") : "";
-  const options = q.options.map((option, i) => {
+  const isNumeric = q.question_type === "numeric";
+  const options = isNumeric ? [] : q.options.map((option, i) => {
     let prefix = selected === i ? "🔘 " : "◯ ";
     if (review) prefix = i === q.answer ? "🟩 " : (selected === i ? "🟥 " : "▫️ ");
     return [{ text: prefix + String.fromCharCode(65 + i) + ". " + option.slice(0, 42),
@@ -423,13 +434,13 @@ async function renderQuestion(env, chatId, state, messageId) {
   ]] : [
     [{ text: "⬅ Previous", callback_data: "nav:prev" }, { text: "➡ Next", callback_data: "nav:next" }, { text: "⏭ Skip", callback_data: "nav:skip" }],
     [{ text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" }, { text: "📋 Submit paper", callback_data: "nav:submit" }],
-    [{ text: "🔎 Second-opinion check", callback_data: "verify:current" }]
+    ...(isNumeric ? [] : [[{ text: "🔎 Second-opinion check", callback_data: "verify:current" }]])
   ];
   const palette = state.questions.map((_, i) => {
     let icon;
     if (review) {
       const a = state.answers[i];
-      icon = a === undefined ? "⬜" : (a === state.questions[i].answer ? "🟩" : "🟥");
+      icon = a === undefined ? "⬜" : (isCorrectAnswer(state.questions[i], a) ? "🟩" : "🟥");
     } else icon = state.marked.includes(i) ? "🟨" : (state.answers[i] !== undefined ? "🟩" : (state.visited?.includes(i) ? "🟥" : "⬜"));
     return { text: icon + (i + 1), callback_data: (review ? "review:q" : "nav:q") + i };
   });
@@ -438,17 +449,25 @@ async function renderQuestion(env, chatId, state, messageId) {
   const summary = review && state.summary
     ? "<b>RESULT:</b> " + state.summary.score + "/" + state.questions.length + "  |  🟩 " + state.summary.correct + "  |  🟥 " + state.summary.wrong + "  |  ⬜ " + state.summary.unanswered +
       "\n<b>Accuracy:</b> " + state.summary.accuracy + "%  •  <b>Time:</b> " + state.summary.time + "\n\n" : "";
+  const yourAnswer = selected === undefined ? "Not attempted" :
+    (isNumeric ? safe(selected) : String.fromCharCode(65 + selected) + ". " + safe(q.options[selected]));
+  const correctAnswer = isNumeric ? safe(q.numeric_answer) :
+    String.fromCharCode(65 + q.answer) + ". " + safe(q.options[q.answer]);
   const explanation = review
-    ? "\n\n<b>Your answer:</b> " + (selected === undefined ? "Not attempted" : String.fromCharCode(65 + selected) + ". " + safe(q.options[selected])) +
-      "\n<b>Correct answer:</b> 🟩 " + String.fromCharCode(65 + q.answer) + ". " + safe(q.options[q.answer]) +
-      "\n<b>Result:</b> " + (selected === undefined ? "⬜ Not attempted" : (selected === q.answer ? "🟩 Correct" : "🟥 Incorrect")) +
+    ? "\n\n<b>Your answer:</b> " + yourAnswer +
+      "\n<b>Correct answer:</b> 🟩 " + correctAnswer +
+      "\n<b>Result:</b> " + (selected === undefined ? "⬜ Not attempted" : (isCorrectAnswer(q, selected) ? "🟩 Correct" : "🟥 Incorrect")) +
       "\n\n<b>Solution:</b>\n" + safe(q.explanation || "No explanation is available for this question.")
-    : (selected === undefined ? "\n\nNot answered" : "\n\nYour answer: " + String.fromCharCode(65 + selected)) + (marked ? "\n⭐ Marked for review" : "");
+    : (selected === undefined ? (isNumeric ? "\n\n<i>Type your numerical answer in the chat and send it.</i>" : "\n\nNot answered") :
+      (isNumeric ? "\n\nYour answer: " + safe(selected) : "\n\nYour answer: " + String.fromCharCode(65 + selected))) +
+      (marked ? "\n⭐ Marked for review" : "");
+  const optionsText = isNumeric ? "" :
+    q.options.map((o, i) => "<b>" + String.fromCharCode(65 + i) + ".</b> " + safe(o)).join("\n") + "\n\n";
   const text = "<b>" + header + "</b>\n" + summary +
     (examLine ? "<i>" + safe(examLine) + "</i>\n" : "") +
     "<b>Question " + (state.index + 1) + "/" + state.questions.length + "</b>" + (review ? "" : "   ⏱ " + clock.label) + "\n" +
     "<b>Chapter:</b> " + safe(q.topic || q.chapter || "Mixed") + "\n\n" + safe(q.question) + "\n\n" +
-    q.options.map((o, i) => "<b>" + String.fromCharCode(65 + i) + ".</b> " + safe(o)).join("\n") + explanation;
+    optionsText + explanation;
   const reply_markup = { inline_keyboard: [...options, ...controls, ...paletteRows,
     ...(review ? [[{ text: "🏁 Finish review", callback_data: "review:finish" }]] : [])] };
   if (messageId) {
@@ -562,7 +581,7 @@ async function showMistakes(env, chatId) {
   const lines = mistakes.slice(-10).reverse().map((q,i) =>
     (i+1)+". ["+(q.year || "AI practice")+"] "+(q.subject || "")+" · "+(q.topic || "Mixed")+
     "\n"+String(q.question || "").slice(0,240)+
-    "\nCorrect: "+(q.options?.[q.answer] || "Not available")
+    "\nCorrect: "+(q.question_type === "numeric" ? q.numeric_answer : (q.options?.[q.answer] || "Not available"))
   );
   await telegram(env, "sendMessage", { chat_id: chatId, text: "🧠 RECENT MISTAKES — review these concepts\n\n"+lines.join("\n\n") });
 }
@@ -572,7 +591,7 @@ async function submitQuiz(env, chatId, state) {
   let score = 0, attempted = 0;
   for (let i = 0; i < state.questions.length; i++) {
     const a = state.answers[i];
-    if (a !== undefined) { attempted++; if (a === state.questions[i].answer) score++; }
+    if (a !== undefined) { attempted++; if (isCorrectAnswer(state.questions[i], a)) score++; }
   }
   const wrong = attempted - score, unanswered = state.questions.length - attempted;
   const elapsed = examClock(state).elapsed;
@@ -586,9 +605,9 @@ async function submitQuiz(env, chatId, state) {
   const mistakeKey = "mistakes:" + chatId;
   const oldMistakes = await env.QUIZ_STATE.get(mistakeKey, "json") || [];
   for (let i = 0; i < state.questions.length; i++) {
-    if (state.answers[i] !== undefined && state.answers[i] !== state.questions[i].answer) {
+    if (state.answers[i] !== undefined && !isCorrectAnswer(state.questions[i], state.answers[i])) {
       const q = state.questions[i];
-      oldMistakes.push({ id:q.id, year:q.year, shift:q.shift, subject:q.subject, topic:q.topic, question:q.question, options:q.options, answer:q.answer, explanation:q.explanation });
+      oldMistakes.push({ id:q.id, year:q.year, shift:q.shift, subject:q.subject, topic:q.topic, question:q.question, options:q.options, answer:q.answer, question_type:q.question_type, numeric_answer:q.numeric_answer, explanation:q.explanation });
     }
   }
   await env.QUIZ_STATE.put(mistakeKey, JSON.stringify(oldMistakes.slice(-50)), { expirationTtl: 31536000 });
@@ -636,6 +655,21 @@ async function handleMessage(env, message) {
   if (text === "🛑 stop quiz" || text === "/stop") {
     await env.QUIZ_STATE.delete("quiz:" + chatId);
     await showMainMenu(env, chatId, "Current paper stopped.");
+    return;
+  }
+  const activeQuiz = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
+  const activeQuestion = activeQuiz?.questions?.[activeQuiz.index];
+  if (activeQuestion?.question_type === "numeric" && !activeQuiz.reviewMode) {
+    const numericValue = Number(raw.replace(/,/g, ""));
+    if (!raw || !Number.isFinite(numericValue)) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "This is a numerical-answer question. Please send only the number (for example: 12 or 12.5)." });
+    } else {
+      activeQuiz.answers = activeQuiz.answers || {};
+      activeQuiz.answers[activeQuiz.index] = numericValue;
+      await saveState(env, chatId, activeQuiz);
+      activeQuiz.messageId = await renderQuestion(env, chatId, activeQuiz, activeQuiz.messageId);
+      await saveState(env, chatId, activeQuiz);
+    }
     return;
   }
   const forceAi = Boolean(await env.QUIZ_STATE.get("ai-prompt:" + chatId));
