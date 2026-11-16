@@ -75,6 +75,55 @@ async function askQuestionCount(env, chatId, subject, topic) {
   });
 }
 
+async function askTimingMode(env, chatId, pending) {
+  await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify(pending), { expirationTtl: 600 });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Choose your test timing:",
+    reply_markup: { inline_keyboard: [
+      [{ text: "⏱ Timed test", callback_data: "timing:timed" }],
+      [{ text: "♾ Timeless (no countdown)", callback_data: "timing:untimed" }]
+    ]}
+  });
+}
+
+async function askDuration(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Choose the total time limit:",
+    reply_markup: { inline_keyboard: [
+      [{ text: "30 minutes", callback_data: "duration:30" }, { text: "60 minutes", callback_data: "duration:60" }],
+      [{ text: "90 minutes", callback_data: "duration:90" }, { text: "120 minutes", callback_data: "duration:120" }],
+      [{ text: "180 minutes (3 hours)", callback_data: "duration:180" }]
+    ]}
+  });
+}
+
+async function showFullPaperOptions(env, chatId) {
+  const bank = questions.filter(validQuestion);
+  const groups = new Map();
+  for (const q of bank) {
+    if (!q.year || !q.shift) continue;
+    const key = String(q.year) + "|" + String(q.shift);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(q);
+  }
+  const complete = [...groups.entries()].filter(([, qs]) => qs.length >= 75);
+  if (!complete.length) {
+    const summary = [...groups.entries()].map(([key, qs]) => key.replace("|", " ") + ": " + qs.length + "/75").join("\\n");
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "📝 Full PYQ Paper mode is available, but no shift in the current local bank has all 75 questions yet. I will not label a partial set as a full paper. Current coverage:\\n" + (summary || "No complete shift imported yet.")
+    });
+    return;
+  }
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Choose a complete JEE Main Paper 1 shift:",
+    reply_markup: { inline_keyboard: complete.map(([key, qs]) => [{
+      text: key.replace("|", " · ") + " (" + qs.length + " Q)",
+      callback_data: "fullpaper:" + encodeURIComponent(key)
+    }]) }
+  });
+}
+
 async function showSubjects(env, chatId) {
   await telegram(env, "sendMessage", {
     chat_id: chatId, text: "Choose a subject for PYQ practice:",
