@@ -505,7 +505,8 @@ async function handleMessage(env, message) {
       return;
     }
     if (settings.mode === "pyq" && forceAi) settings.mode = "ai";
-    await startQuiz(env, chatId, settings, raw);
+    settings.originalRequest = raw;
+    await askTimingMode(env, chatId, settings);
   } catch (e) {
     console.error("Quiz request failed", String(e));
     const detail = String(e?.message || e || "Unknown error").slice(0, 500);
@@ -546,7 +547,7 @@ async function handleCallback(env, callback) {
       return askDuration(env, chatId);
     }
     await env.QUIZ_STATE.delete("pending:" + chatId);
-    return startQuiz(env, chatId, pending, "PYQ menu selection");
+    return startQuiz(env, chatId, pending, pending.originalRequest || "PYQ menu selection");
   }
   if (parts[0] === "duration") {
     const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
@@ -570,7 +571,7 @@ async function handleCallback(env, callback) {
   if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
   const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
-  if (examClock(state).left <= 0) return submitQuiz(env, chatId, state);
+  if (state.timed !== false && examClock(state).left <= 0) return submitQuiz(env, chatId, state);
   if (parts[0] === "pick") {
     const index = Number(parts[1]), choice = Number(parts[2]);
     if (index !== state.index || !Number.isInteger(choice) || choice < 0 || choice > 3) return;
@@ -613,7 +614,7 @@ export default {
         const chatId = item.name.slice(5);
         const state = await env.QUIZ_STATE.get(item.name, "json");
         if (!state) continue;
-        if (examClock(state).left <= 0) {
+        if (state.timed !== false && examClock(state).left <= 0) {
           await submitQuiz(env, chatId, state);
         } else if (state.messageId) {
           state.messageId = await renderQuestion(env, chatId, state, state.messageId);
