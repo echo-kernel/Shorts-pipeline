@@ -555,7 +555,7 @@ async function handleCallback(env, callback) {
     pending.timed = true;
     pending.durationSeconds = Number(parts[1]) * 60;
     await env.QUIZ_STATE.delete("pending:" + chatId);
-    return startQuiz(env, chatId, pending, "PYQ menu selection");
+    return startQuiz(env, chatId, pending, pending.originalRequest || "PYQ menu selection");
   }
   if (parts[0] === "fullpaper") {
     const key = decodeURIComponent(parts.slice(1).join(":"));
