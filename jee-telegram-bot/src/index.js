@@ -749,8 +749,10 @@ async function handleCallback(env, callback) {
   } else if (parts[0] === "nav") {
     const action = parts[1];
     if (action === "submit") {
-      return telegram(env, "sendMessage", {
-        chat_id: chatId, text: "Are you sure you want to submit the paper?",
+      return telegram(env, "editMessageText", {
+        chat_id: chatId, message_id: callback.message.message_id,
+        text: "📋 <b>SUBMIT PAPER?</b>\n\nAre you sure you want to finish this test? You can still return and change answers if you continue.",
+        parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[
           { text: "✅ Confirm submit", callback_data: "confirm-submit" },
           { text: "↩ Continue test", callback_data: "cancel-submit" }
@@ -819,6 +821,18 @@ export default {
       if (update.callback_query) await handleCallback(env, update.callback_query);
     } catch (error) {
       console.error("Update handling failed", String(error));
+      const chatId = update.message?.chat?.id || update.callback_query?.message?.chat?.id;
+      if (chatId) {
+        try {
+          await telegram(env, "sendMessage", {
+            chat_id: chatId,
+            text: "❌ I couldn't complete that action.\n" + String(error?.message || error || "Unknown error").slice(0, 700) +
+              "\n\nPlease send /start and try again. Your existing answers have not intentionally been cleared."
+          });
+        } catch (notifyError) {
+          console.error("Could not notify user about update failure", String(notifyError));
+        }
+      }
     }
     return new Response("OK");
   }
