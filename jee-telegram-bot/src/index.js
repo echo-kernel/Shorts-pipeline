@@ -170,21 +170,20 @@ async function sendNext(env, chatId, state) {
     callback_data: `a:${state.index}:${i}`
   }]);
 
-  const meta = [q.year, q.shift].filter(Boolean).join(" · ");
+  const examParts = String(q.shift || "").split("·").map(part => part.trim()).filter(Boolean);
+  const examLine = ["JEE MAIN", q.year, ...examParts].filter(Boolean).join(" | ");
   const safe = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const pdfLink = `<a href="${safe(q.source_url)}">📄 Download question paper (PDF)</a>`;
   await telegram(env, "sendMessage", {
     chat_id: chatId,
     parse_mode: "HTML",
     disable_web_page_preview: true,
     text:
       `<b>📘 JEE MAIN ${safe(String(q.subject).toUpperCase())} — PYQ</b>\n` +
-      `<b>Question ${state.index + 1}/${state.questions.length}</b>` +
-      (meta ? `\n<i>${safe(meta)}</i>` : "") +
-      `\n<b>Chapter:</b> ${safe(q.topic || q.chapter || "Not specified")}\n\n` +
+      (examLine ? `<i>${safe(examLine)}</i>\n` : "") +
+      `<b>Question ${state.index + 1}/${state.questions.length}</b>\n` +
+      `<b>Chapter:</b> ${safe(q.topic || q.chapter || "Not specified")}\n\n` +
       `<b>Question</b>\n${safe(q.question)}\n\n` +
-      q.options.map((option, i) => `<b>${String.fromCharCode(65+i)}.</b> ${safe(option)}`).join("\n") +
-      `\n\n${pdfLink}`,
+      q.options.map((option, i) => `<b>${String.fromCharCode(65+i)}.</b> ${safe(option)}`).join("\n"),
     reply_markup: { inline_keyboard: keyboard }
   });
 }
