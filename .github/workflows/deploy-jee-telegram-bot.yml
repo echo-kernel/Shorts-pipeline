@@ -125,5 +125,10 @@ jobs:
               {"command":"topics","description":"Show available chapter-wise topics"},
               {"command":"topic","description":"Start a quiz for a chapter"},
               {"command":"stop","description":"Stop the current quiz"},
+              {"command":"years","description":"Browse PYQs by year"},
+              {"command":"fullpaper","description":"Browse complete 75-question papers"},
+              {"command":"progress","description":"Show your quiz performance"},
+              {"command":"mistakes","description":"Review recent wrong answers"},
+              {"command":"coverage","description":"Show verified PYQ bank coverage"},
               {"command":"help","description":"Show bot instructions"}
             ]}'
