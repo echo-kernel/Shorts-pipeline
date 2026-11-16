@@ -9,7 +9,6 @@ const MAIN_MENU = {
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
-  is_persistent: true,
   input_field_placeholder: "Type: Create 20 difficult Physics questions on Rotation"
 };
 
@@ -682,10 +681,10 @@ export default {
         if (!state) continue;
         if (state.timed !== false && examClock(state).left <= 0) {
           await submitQuiz(env, chatId, state);
-        } else if (state.messageId) {
-          state.messageId = await renderQuestion(env, chatId, state, state.messageId);
-          await saveState(env, chatId, state);
         }
+        // Do not re-render the question on every cron tick. Telegram may reject
+        // an edit and the fallback would create duplicate question messages.
+        // The timer is enforced here; navigation refreshes the visible question.
       }
     } catch (error) {
       console.error("Scheduled exam timer failed", String(error));
