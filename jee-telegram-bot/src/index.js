@@ -6,6 +6,7 @@ const MAIN_MENU = {
     [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
     [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
     [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
+    [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -367,7 +368,8 @@ async function renderQuestion(env, chatId, state, messageId) {
     [
       { text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" },
       { text: "📋 Submit paper", callback_data: "nav:submit" }
-    ]
+    ],
+    [{ text: "🔎 Second-opinion check", callback_data: "verify:current" }]
   ];
   const palette = state.questions.map((_, i) => {
     const icon = state.marked.includes(i) ? "🟨" :
@@ -470,6 +472,64 @@ async function startQuiz(env, chatId, settings, originalRequest) {
   await saveState(env, chatId, state);
 }
 
+async function verifyQuestionWithGemini(env, chatId, q, questionNumber) {
+  const prompt = [
+    "Act as an independent JEE Main examiner. Solve this question from first principles.",
+    "Do not trust or assume the supplied answer is correct. Check for ambiguity, missing data, and calculation errors.",
+    'Return JSON only: {"status":"agree"|"disagree"|"ambiguous","computed_answer":0,"reason":"brief reasoning"}.',
+    "The computed_answer must be the zero-based option index, or -1 if no unique option.",
+    "Subject: " + q.subject + "; topic: " + (q.topic || "unspecified"),
+    "Question: " + q.question,
+    ...q.options.map((o,i)=>"Option "+i+": "+o),
+    "Stored answer index (for comparison only): " + q.answer
+  ].join("\n");
+  try {
+    const result = await callGemini(env, prompt, 700);
+    const computed = Number(result.computed_answer);
+    const status = result.status || (computed === q.answer ? "agree" : "disagree");
+    const heading = status === "agree" && computed === q.answer
+      ? "✅ Second check agrees with the stored answer."
+      : status === "disagree" || (Number.isInteger(computed) && computed !== q.answer)
+        ? "⚠️ Second check disagrees. Treat this question as needing manual review."
+        : "🟨 Second check could not confirm a unique answer.";
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "🔎 INDEPENDENT AI CHECK — Q" + questionNumber + "\n" + heading +
+        "\nStored answer: " + (q.options[q.answer] || "Unknown") +
+        "\nAI-computed answer: " + (Number.isInteger(computed) && computed >= 0 && computed < 4 ? q.options[computed] : "Not confirmed") +
+        "\nReason: " + String(result.reason || "No reasoning supplied").slice(0, 1200) +
+        "\n\nThis is an AI second opinion, not an official NTA verification."
+    });
+  } catch (e) {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "Second-opinion check is temporarily unavailable: " + String(e.message || e).slice(0,300) + "\nThe stored answer has not been changed." });
+  }
+}
+
+async function showProgress(env, chatId) {
+  const p = await env.QUIZ_STATE.get("progress:" + chatId, "json") || { papers: 0, total: 0, attempted: 0, correct: 0 };
+  const accuracy = p.attempted ? Math.round(p.correct * 100 / p.attempted) : 0;
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📈 YOUR JEE PROGRESS\n\nPapers submitted: " + p.papers +
+      "\nQuestions seen: " + p.total +
+      "\nAttempted: " + p.attempted +
+      "\nCorrect: " + p.correct +
+      "\nAccuracy: " + accuracy + "%" +
+      "\n\nAccuracy is calculated across submitted papers on this Telegram account."
+  });
+}
+
+async function showMistakes(env, chatId) {
+  const mistakes = await env.QUIZ_STATE.get("mistakes:" + chatId, "json") || [];
+  if (!mistakes.length) return telegram(env, "sendMessage", { chat_id: chatId, text: "🧠 No saved mistakes yet. Wrong answers from submitted papers will appear here." });
+  const lines = mistakes.slice(-10).reverse().map((q,i) =>
+    (i+1)+". ["+(q.year || "AI practice")+"] "+(q.subject || "")+" · "+(q.topic || "Mixed")+
+    "\n"+String(q.question || "").slice(0,240)+
+    "\nCorrect: "+(q.options?.[q.answer] || "Not available")
+  );
+  await telegram(env, "sendMessage", { chat_id: chatId, text: "🧠 RECENT MISTAKES — review these concepts\n\n"+lines.join("\n\n") });
+}
+
 async function submitQuiz(env, chatId, state) {
   const key = "quiz:" + chatId;
   let score = 0, attempted = 0;
@@ -483,6 +543,22 @@ async function submitQuiz(env, chatId, state) {
   const wrong = attempted - score;
   const unanswered = state.questions.length - attempted;
   const elapsed = examClock(state).elapsed;
+  const progressKey = "progress:" + chatId;
+  const progress = await env.QUIZ_STATE.get(progressKey, "json") || { papers: 0, total: 0, attempted: 0, correct: 0 };
+  progress.papers += 1;
+  progress.total += state.questions.length;
+  progress.attempted += attempted;
+  progress.correct += score;
+  await env.QUIZ_STATE.put(progressKey, JSON.stringify(progress), { expirationTtl: 31536000 });
+  const mistakeKey = "mistakes:" + chatId;
+  const oldMistakes = await env.QUIZ_STATE.get(mistakeKey, "json") || [];
+  for (let i=0;i<state.questions.length;i++) {
+    if (state.answers[i] !== undefined && state.answers[i] !== state.questions[i].answer) {
+      const q = state.questions[i];
+      oldMistakes.push({ id:q.id, year:q.year, shift:q.shift, subject:q.subject, topic:q.topic, question:q.question, options:q.options, answer:q.answer, explanation:q.explanation });
+    }
+  }
+  await env.QUIZ_STATE.put(mistakeKey, JSON.stringify(oldMistakes.slice(-50)), { expirationTtl: 31536000 });
   await env.QUIZ_STATE.delete(key);
   await telegram(env, "sendMessage", {
     chat_id: chatId,
@@ -542,6 +618,8 @@ async function handleMessage(env, message) {
   }
   if (text === "📝 full test (75q)" || text === "📝 full pyq paper" || text === "/fullpaper") return showFullPaperOptions(env, chatId);
   if (text === "📅 pyq by year" || text === "/years") return showYears(env, chatId);
+  if (text === "📈 my progress" || text === "/progress") return showProgress(env, chatId);
+  if (text === "🧠 mistake review" || text === "/mistakes") return showMistakes(env, chatId);
   if (text === "🛑 stop quiz" || text === "/stop") {
     await env.QUIZ_STATE.delete("quiz:" + chatId);
     await showMainMenu(env, chatId, "Current paper stopped.");
@@ -652,6 +730,10 @@ async function handleCallback(env, callback) {
   if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
   const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
+  if (parts[0] === "verify" && parts[1] === "current") {
+    const q = state.questions[state.index];
+    return verifyQuestionWithGemini(env, chatId, q, state.index + 1);
+  }
   if (state.timed !== false && examClock(state).left <= 0) return submitQuiz(env, chatId, state);
   if (parts[0] === "pick") {
     const index = Number(parts[1]), choice = Number(parts[2]);
