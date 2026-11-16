@@ -32,6 +32,47 @@ async function showSubjects(env, chatId) {
   });
 }
 
+
+async function showTopicSubjects(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📖 Choose a subject to browse its available chapters:",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "⚡ Physics", callback_data: "topic-subject:physics" }],
+        [{ text: "🧪 Chemistry", callback_data: "topic-subject:chemistry" }],
+        [{ text: "📐 Mathematics", callback_data: "topic-subject:maths" }]
+      ]
+    }
+  });
+}
+
+async function showTopics(env, chatId, subject) {
+  const available = [...new Map(questions.filter(validQuestion)
+    .filter(q => !subject || q.subject.toLowerCase() === subject)
+    .map(q => {
+      const topic = q.topic || q.chapter;
+      return [normalizeTopic(topic), topic];
+    })).values()];
+  if (!available.length) {
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: subject ? `No verified chapters are available for ${subject} yet.` : "No verified chapters are available yet.",
+      reply_markup: MAIN_MENU
+    });
+    return;
+  }
+  const buttons = available.map(topic => [{
+    text: `📘 ${topic}`.slice(0, 60),
+    callback_data: `topic:${subject}:${normalizeTopic(topic)}`.slice(0, 64)
+  }]);
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: `Choose a chapter/topic in ${subject}:`,
+    reply_markup: { inline_keyboard: buttons }
+  });
+}
+
 async function telegram(env, method, body) {
   const response = await fetch(`${TG}/bot${env.TELEGRAM_TOKEN}/${method}`, {
     method: "POST",
@@ -130,14 +171,20 @@ async function sendNext(env, chatId, state) {
   }]);
 
   const meta = [q.year, q.shift].filter(Boolean).join(" · ");
+  const safe = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const pdfLink = `<a href="${safe(q.source_url)}">📄 Download question paper (PDF)</a>`;
   await telegram(env, "sendMessage", {
     chat_id: chatId,
+    parse_mode: "HTML",
+    disable_web_page_preview: true,
     text:
-      `📘 JEE Main ${String(q.subject).toUpperCase()} PYQ\nQuestion ${state.index + 1}/${state.questions.length}` +
-      (meta ? `\n${meta}` : "") +
-      `\n\n${q.question}\n\n` +
-      q.options.map((option, i) => `${i + 1}. ${option}`).join("\n") +
-      `\n\nSource: ${q.source_url}`,
+      `<b>📘 JEE MAIN ${safe(String(q.subject).toUpperCase())} — PYQ</b>\n` +
+      `<b>Question ${state.index + 1}/${state.questions.length}</b>` +
+      (meta ? `\n<i>${safe(meta)}</i>` : "") +
+      `\n<b>Chapter:</b> ${safe(q.topic || q.chapter || "Not specified")}\n\n` +
+      `<b>Question</b>\n${safe(q.question)}\n\n` +
+      q.options.map((option, i) => `<b>${String.fromCharCode(65+i)}.</b> ${safe(option)}`).join("\n") +
+      `\n\n${pdfLink}`,
     reply_markup: { inline_keyboard: keyboard }
   });
 }
@@ -187,16 +234,10 @@ async function handleMessage(env, message) {
     await showSubjects(env, chatId);
   } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
     await startQuiz(env, chatId, null);
-  } else if (text === "📊 available topics" || text === "📖 chapter quiz" || text === "/topics") {
-    const available = [...new Map(questions.filter(validQuestion).map(q => {
-      const subject = q.subject.toLowerCase();
-      const topic = q.topic || q.chapter;
-      return [`${subject}:${normalizeTopic(topic)}`, { subject, topic }];
-    })).values()];
-    const listing = available.length
-      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\n")
-      : "No verified topics have been added yet.";
-    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\n${listing}`, reply_markup: MAIN_MENU });
+  } else if (text === "📖 chapter quiz") {
+    await showTopicSubjects(env, chatId);
+  } else if (text === "📊 available topics" || text === "/topics") {
+    await showTopicSubjects(env, chatId);
   } else if (text === "⚡ physics" || text === "/physics") {
     await startQuiz(env, chatId, "physics");
   } else if (text === "🧪 chemistry" || text === "/chemistry") {
@@ -234,6 +275,17 @@ async function handleCallback(env, callback) {
     await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
     if (indexText === "mixed") return startQuiz(env, chatId, null);
     return startQuiz(env, chatId, indexText);
+  }
+  if (action === "topic-subject") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+    return showTopics(env, chatId, indexText);
+  }
+  if (action === "topic") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+    const subject = indexText;
+    const topic = choiceText;
+    if (!["physics", "chemistry", "maths"].includes(subject) || !topic) return;
+    return startQuiz(env, chatId, subject, topic);
   }
   if (action !== "a") return;
 
