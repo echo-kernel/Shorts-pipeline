@@ -1,27 +1,7 @@
-// First reviewed MCQ batch: JEE Main 2024, 27 January, Shift 1.
-// Question text/options/solutions cross-checked against the cited solved paper;
-// the official NTA final key for this date and shift is linked for audit.
-// Keep numerical-answer questions out until the bot supports that format.
+// Reviewed MCQ batch: JEE Main 2024, 27 January, Shift 1.
+// Question text and worked answers cross-checked against the cited solved paper.
+// Official NTA final answer key for this date/shift is linked for audit.
 const questions = [
-  {
-    id: "2024-jan27-shift1-maths-q1",
-    verified: true,
-    source_url: "https://www.ayjr.in/wp-content/uploads/JEE-Mains-2024-Shift-1-Question-Paper-27-Jan.pdf",
-    answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
-    year: "2024",
-    shift: "27 January · Shift 1",
-    subject: "maths",
-    topic: "Binomial Coefficients",
-    question: "For non-negative integers n and r, the relation (n−1)C(r) = (k²−8)·nC(r+1) holds. Which range of k is possible?",
-    options: [
-      "2√2 < k ≤ 3",
-      "2√3 < k ≤ 3√2",
-      "2√3 < k < 3√3",
-      "2√2 < k < 2√3"
-    ],
-    answer: 0,
-    explanation: "Using the ratio (n−1)C(r) / nC(r+1) = (r+1)/n, we get k²−8 = (r+1)/n. Since 0 < (r+1)/n ≤ 1, 8 < k² ≤ 9. Thus 2√2 < k ≤ 3."
-  },
   {
     id: "2024-jan27-shift1-maths-q2",
     verified: true,
@@ -34,7 +14,7 @@ const questions = [
     question: "Find the distance from P(7, −2, 11) to the line (x−6)/1 = (y−4)/0 = (z−8)/3, measured along the line (x−5)/2 = (y−1)/(−3) = (z−5)/6.",
     options: ["12", "14", "18", "21"],
     answer: 1,
-    explanation: "A point on the second line is B = (2λ+5, −3λ+1, 6λ+5). Requiring B to lie on the first line gives −3λ−3 = 0, so λ = −1 and B = (3, 4, −1). Therefore PB = √[(7−3)²+(−2−4)²+(11+1)²] = √196 = 14."
+    explanation: "A point on the second line is B = (2λ+5, −3λ+1, 6λ+5). Requiring B to lie on the first line gives λ = −1 and B = (3, 4, −1). Therefore PB = √[(7−3)²+(−2−4)²+(11+1)²] = √196 = 14."
   },
   {
     id: "2024-jan27-shift1-maths-q4",
@@ -63,6 +43,48 @@ const questions = [
     options: ["A = B³", "3A = B", "B = A³", "A = 3B"],
     answer: 0,
     explanation: "The sum of coefficients is found by setting x=1. Thus A=(1−3+10)ⁿ=8ⁿ and B=(1+1)ⁿ=2ⁿ. Therefore A=B³."
+  },
+  {
+    id: "2024-jan27-shift1-maths-q6",
+    verified: true,
+    source_url: "https://www.ayjr.in/wp-content/uploads/JEE-Mains-2024-Shift-1-Question-Paper-27-Jan.pdf",
+    answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
+    year: "2024",
+    shift: "27 January · Shift 1",
+    subject: "maths",
+    topic: "Sequences and Series",
+    question: "How many common terms are there in the two arithmetic progressions 4, 9, 14, 19, ... (up to its 25th term) and 3, 6, 9, 12, ... (up to its 37th term)?",
+    options: ["9", "5", "7", "8"],
+    answer: 2,
+    explanation: "The common terms are 9, 24, 39, 54, 69, 84 and 99. Both lists end before the next common term, so there are 7 common terms."
+  },
+  {
+    id: "2024-jan27-shift1-maths-q8",
+    verified: true,
+    source_url: "https://www.ayjr.in/wp-content/uploads/JEE-Mains-2024-Shift-1-Question-Paper-27-Jan.pdf",
+    answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
+    year: "2024",
+    shift: "27 January · Shift 1",
+    subject: "maths",
+    topic: "Three Dimensional Geometry",
+    question: "The shortest distance between the lines (x−4)/1 = (y+1)/2 = z/(−3) and (x−λ)/2 = (y+1)/4 = (z−2)/(−5) is 6/√5. What is the sum of all possible values of λ?",
+    options: ["5", "8", "7", "10"],
+    answer: 1,
+    explanation: "Using the skew-lines distance formula gives 6/√5 = |2(λ−4)|/√5. Hence |λ−4|=3, so λ=1 or 7 and their sum is 8."
+  },
+  {
+    id: "2024-jan27-shift1-maths-q9",
+    verified: true,
+    source_url: "https://www.ayjr.in/wp-content/uploads/JEE-Mains-2024-Shift-1-Question-Paper-27-Jan.pdf",
+    answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
+    year: "2024",
+    shift: "27 January · Shift 1",
+    subject: "maths",
+    topic: "Definite Integration",
+    question: "If ∫₀¹ 1/(√(3+x)+√(1+x)) dx = a+b√2+c√3, where a,b,c are rational, find 2a+3b−4c.",
+    options: ["4", "10", "7", "8"],
+    answer: 3,
+    explanation: "Rationalising gives one half of ∫₀¹[√(3+x)−√(1+x)]dx. Evaluating, the integral is 3−(2√2)/3−√3. Thus a=3, b=−2/3, c=−1 and 2a+3b−4c=8."
   }
 ];
 export default questions;
