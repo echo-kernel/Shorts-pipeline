@@ -31,7 +31,7 @@ const questions = [
     explanation: "The orthocentre lies on x+y=4, so a+b=4. Since sin(x(4−x)) is unchanged by x→4−x, I₁ = ∫ₐᵇ(4−x)sin(x(4−x))dx. Adding this to the original I₁ gives 2I₁=4I₂, hence I₁/I₂=2 and 36(I₁/I₂)=72."
   },
   {
-    id: "2024-jan27-shift1-maths-q5",
+    id: "2024-jan27-shift1-maths-q19",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
