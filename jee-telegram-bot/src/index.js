@@ -23,6 +23,7 @@ function validQuestion(q) {
     /^https?:\/\//i.test(q.source_url) &&
     ["physics", "chemistry", "maths"].includes(String(q.subject).toLowerCase()) &&
     typeof q.question === "string" &&
+    (typeof q.topic === "string" || typeof q.chapter === "string") &&
     Array.isArray(q.options) &&
     q.options.length === 4 &&
     q.options.every(x => typeof x === "string" && x.trim()) &&
@@ -111,9 +112,21 @@ async function sendNext(env, chatId, state) {
   });
 }
 
-async function startQuiz(env, chatId, subject) {
+function normalizeTopic(value) {
+  return String(value || "").toLowerCase().trim()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+async function startQuiz(env, chatId, subject, topic) {
   const bank = questions.filter(validQuestion);
-  const chosen = shuffled(bank.filter(q => !subject || q.subject.toLowerCase() === subject)).slice(0, 10);
+  const chosen = shuffled(bank.filter(q => {
+    const subjectMatches = !subject || q.subject.toLowerCase() === subject;
+    const storedTopic = normalizeTopic(q.topic || q.chapter);
+    const topicMatches = !topic || storedTopic === normalizeTopic(topic);
+    return subjectMatches && topicMatches;
+  })).slice(0, 10);
 
   if (!chosen.length) {
     await telegram(env, "sendMessage", {
@@ -127,7 +140,7 @@ async function startQuiz(env, chatId, subject) {
   await env.QUIZ_STATE.put(`quiz:${chatId}`, JSON.stringify(state), { expirationTtl: 7200 });
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: `Starting your ${subject || "mixed"} JEE Main PYQ quiz: ${chosen.length} questions.\nChoose an option for each question.`
+    text: `Starting your ${subject || "mixed"} JEE Main PYQ quiz${topic ? ` — ${topic}` : ""}: ${chosen.length} questions.\nChoose an option for each question.`
   });
   await sendNext(env, chatId, state);
 }
@@ -143,6 +156,25 @@ async function handleMessage(env, message) {
     });
   } else if (text === "start quiz question" || text === "/quiz") {
     await startQuiz(env, chatId, null);
+  } else if (text === "/topics") {
+    const available = [...new Map(questions.filter(validQuestion).map(q => {
+      const subject = q.subject.toLowerCase();
+      const topic = q.topic || q.chapter;
+      return [`${subject}:${normalizeTopic(topic)}`, { subject, topic }];
+    })).values()];
+    const listing = available.length
+      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\\n")
+      : "No verified topics have been added yet.";
+    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\\n${listing}` });
+  } else if (text.startsWith("/topic ")) {
+    const parts = text.slice(7).trim().split(/\\s+/);
+    const subject = parts.shift();
+    const topic = parts.join(" ");
+    if (!["physics", "chemistry", "maths"].includes(subject) || !topic) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "Use: /topic physics rotational-motion\\nSubjects: physics, chemistry, maths. Use hyphens for multi-word topics." });
+    } else {
+      await startQuiz(env, chatId, subject, topic);
+    }
   } else if (text === "/physics") {
     await startQuiz(env, chatId, "physics");
   } else if (text === "/chemistry") {
