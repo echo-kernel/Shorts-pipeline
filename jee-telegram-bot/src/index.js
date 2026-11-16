@@ -5,7 +5,7 @@ const MAIN_MENU = {
   keyboard: [
     [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
     [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
-    [{ text: "📊 Available Topics" }, { text: "📝 Full PYQ Paper" }],
+    [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -60,9 +60,9 @@ async function showMainMenu(env, chatId, message) {
   });
 }
 
-async function askQuestionCount(env, chatId, subject, topic) {
+async function askQuestionCount(env, chatId, subject, topic, year) {
   await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify({
-    subject: subject || null, topic: topic || null
+    subject: subject || null, topic: topic || null, year: year || null
   }), { expirationTtl: 600 });
   await telegram(env, "sendMessage", {
     chat_id: chatId,
@@ -133,6 +133,25 @@ async function showFullPaperOptions(env, chatId) {
       callback_data: "fullpaper:" + encodeURIComponent(key)
     }]) }
   });
+}
+
+async function showYears(env, chatId) {
+  const years = [...new Set(questions.filter(validQuestion).map(q => String(q.year || "")).filter(Boolean))].sort((a,b) => Number(b)-Number(a));
+  if (!years.length) return telegram(env, "sendMessage", { chat_id: chatId, text: "No year-tagged PYQs are available yet." });
+  const rows = [];
+  for (let i=0;i<years.length;i+=2) {
+    rows.push(years.slice(i,i+2).map(year => ({ text: "📅 " + year, callback_data: "year:" + year })));
+  }
+  await telegram(env, "sendMessage", { chat_id: chatId, text: "Choose the JEE Main PYQ year:", reply_markup: { inline_keyboard: rows } });
+}
+
+async function showYearSubjects(env, chatId, year) {
+  const bank = questions.filter(validQuestion).filter(q => String(q.year) === String(year));
+  const counts = ["physics","chemistry","maths"].map(subject => ({subject,count:bank.filter(q=>q.subject.toLowerCase()===subject).length}));
+  const names = {physics:"⚡ Physics",chemistry:"🧪 Chemistry",maths:"📐 Mathematics"};
+  const rows = counts.filter(x=>x.count>0).map(x=>[{text:names[x.subject]+" ("+x.count+")",callback_data:"year-subject:"+year+":"+x.subject}]);
+  if (bank.length) rows.push([{text:"🎯 All subjects ("+bank.length+")",callback_data:"year-subject:"+year+":mixed"}]);
+  await telegram(env, "sendMessage", {chat_id:chatId,text:"📅 "+year+" PYQs found in the current verified bank. Choose subject:",reply_markup:{inline_keyboard:rows}});
 }
 
 async function showSubjects(env, chatId) {
@@ -238,7 +257,8 @@ function interpretRequest(rawText, forceAi) {
     topic,
     count,
     difficulty,
-    questionType: "mcq"
+    questionType: "mcq",
+    year: (lower.match(/\\b(20(?:19|20|21|22|23|24|25|26))\\b/) || [])[1] || null
   };
 }
 
@@ -394,7 +414,8 @@ async function startQuiz(env, chatId, settings, originalRequest) {
       const subjectOk = settings.subject === "mixed" || q.subject.toLowerCase() === settings.subject;
       const topic = normalizeTopic(q.topic || q.chapter);
       const topicOk = !wantedTopic || topic.includes(wantedTopic) || wantedTopic.includes(topic);
-      return subjectOk && topicOk;
+      const yearOk = !settings.year || String(q.year) === String(settings.year);
+      return subjectOk && topicOk && yearOk;
       })).slice(0, settings.count);
     }
     if (!chosen.length) {
@@ -494,7 +515,8 @@ async function handleMessage(env, message) {
   if (text === "📖 chapter pyq" || text === "📖 chapter quiz" || text === "📊 available topics" || text === "/topics") {
     return showTopicSubjects(env, chatId);
   }
-  if (text === "📝 full pyq paper" || text === "/fullpaper") return showFullPaperOptions(env, chatId);
+  if (text === "📝 full test (75q)" || text === "📝 full pyq paper" || text === "/fullpaper") return showFullPaperOptions(env, chatId);
+  if (text === "📅 pyq by year" || text === "/years") return showYears(env, chatId);
   if (text === "🛑 stop quiz" || text === "/stop") {
     await env.QUIZ_STATE.delete("quiz:" + chatId);
     await showMainMenu(env, chatId, "Current paper stopped.");
@@ -546,6 +568,7 @@ async function handleCallback(env, callback) {
     const bank = questions.filter(validQuestion);
     const available = bank.filter(q =>
       (pending.subject === "mixed" || !pending.subject || q.subject.toLowerCase() === pending.subject) &&
+      (!pending.year || String(q.year) === String(pending.year)) &&
       (!pending.topic || normalizeTopic(q.topic || q.chapter).includes(normalizeTopic(pending.topic)))
     ).length;
     const count = parts[1] === "all" ? available : Number(parts[1]);
@@ -591,6 +614,11 @@ async function handleCallback(env, callback) {
   if (parts[0] === "fullpaper-cancel") {
     await env.QUIZ_STATE.delete("pending:" + chatId);
     return showMainMenu(env, chatId, "Full paper cancelled. Choose another mode whenever you're ready.");
+  }
+  if (parts[0] === "year") return showYearSubjects(env, chatId, parts[1]);
+  if (parts[0] === "year-subject") {
+    const year = parts[1], subject = parts[2];
+    return askQuestionCount(env, chatId, subject, null, year);
   }
   if (parts[0] === "subject") {
     return askQuestionCount(env, chatId, parts[1] === "mixed" ? "mixed" : parts[1], null);
