@@ -340,7 +340,7 @@ const questions = [
     options: ["p₀/(aeR)","ap₀/(eR)","Infinity","0°C"],
     answer: 0,
     explanation: "Integrating gives p = p₀e⁻ᵃᵛ. Since T = pv/R for one mole, temperature is maximized when v = 1/a, giving Tₘₐₓ = p₀/(aeR)."
-  }
+  },
 
   // First imported batch: JEE Main 2024, 27 January, Shift 2.
   // Transcribed from the shift paper; answers independently checked against the
