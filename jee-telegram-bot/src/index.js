@@ -7,6 +7,7 @@ const MAIN_MENU = {
     [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
     [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
     [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
+    [{ text: "📊 Bank Coverage" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -144,6 +145,24 @@ async function showFullPaperOptions(env, chatId) {
       text: key.replace("|", " · ") + " (" + qs.length + " Q)",
       callback_data: "fullpaper:" + encodeURIComponent(key)
     }]) }
+  });
+}
+
+async function showBankCoverage(env, chatId) {
+  const bank = questions.filter(validQuestion);
+  const years = [...new Set(bank.map(q=>String(q.year || "Unknown")))].sort((x,y)=>Number(y)-Number(x));
+  const lines = years.map(year => {
+    const subset = bank.filter(q=>String(q.year || "Unknown")===year);
+    return year + " — " + subset.length + " verified entries | Physics " +
+      subset.filter(q=>q.subject.toLowerCase()==="physics").length + " · Chemistry " +
+      subset.filter(q=>q.subject.toLowerCase()==="chemistry").length + " · Maths " +
+      subset.filter(q=>q.subject.toLowerCase()==="maths").length;
+  });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📊 PYQ BANK COVERAGE\n\nVerified entries currently loaded: " + bank.length +
+      "\n\n" + (lines.join("\n") || "No verified entries") +
+      "\n\nCoverage is not yet complete for every JEE Main year/shift. Full-paper mode appears only when a complete 75-question shift is available."
   });
 }
 
@@ -598,7 +617,7 @@ async function handleMessage(env, message) {
   }
   if (text === "/help" || text === "🆘 help") {
     await showMainMenu(env, chatId,
-      "JEE Main Test Bot\n\n📘 PYQ mode: verified past-year questions only.\n🤖 AI Quiz: create new questions from your own instructions.\n\nTry:\n• Create 20 difficult Physics questions from Rotation\n• Make 30 mixed JEE questions, moderate level\n• Give me 15 Chemistry PYQs from Chemical Bonding\n\nDuring a paper: select answers, Previous, Next, Skip, Mark for Review, question palette, then Submit. Solutions appear only after submission.\n\nNote: AI questions are practice questions, not official PYQs.");
+      "JEE MAIN • SMART PRACTICE\n\n📘 PYQ mode: verified past-year questions only.\n🤖 AI Quiz: create new questions from your own instructions.\n🔎 Second-opinion check: independently ask AI to solve the current question.\n📈 Progress and 🧠 mistake review are saved for your account.\n📊 Bank Coverage shows what is actually loaded.\n\nTry:\n• Create 20 difficult Physics questions from Rotation\n• Make 30 mixed JEE questions, moderate level\n• Give me 15 Chemistry PYQs from Chemical Bonding\n\nDuring a paper: select answers, Previous, Next, Skip, Mark for Review, question palette, then Submit. Solutions appear only after submission.\n\nNote: AI questions are practice questions, not official PYQs.");
     return;
   }
   if (text === "🤖 ai quiz") {
@@ -618,6 +637,7 @@ async function handleMessage(env, message) {
   }
   if (text === "📝 full test (75q)" || text === "📝 full pyq paper" || text === "/fullpaper") return showFullPaperOptions(env, chatId);
   if (text === "📅 pyq by year" || text === "/years") return showYears(env, chatId);
+  if (text === "📊 bank coverage" || text === "/coverage") return showBankCoverage(env, chatId);
   if (text === "📈 my progress" || text === "/progress") return showProgress(env, chatId);
   if (text === "🧠 mistake review" || text === "/mistakes") return showMistakes(env, chatId);
   if (text === "🛑 stop quiz" || text === "/stop") {
