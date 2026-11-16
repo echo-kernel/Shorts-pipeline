@@ -3,7 +3,7 @@
 // Official NTA final answer key for this date/shift is linked for audit.
 const questions = [
   {
-    id: "2024-jan27-shift1-maths-q2",
+    id: "2024-jan27-shift1-maths-q7",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
@@ -17,7 +17,7 @@ const questions = [
     explanation: "A point on the second line is B = (2λ+5, −3λ+1, 6λ+5). Requiring B to lie on the first line gives λ = −1 and B = (3, 4, −1). Therefore PB = √[(7−3)²+(−2−4)²+(11+1)²] = √196 = 14."
   },
   {
-    id: "2024-jan27-shift1-maths-q4",
+    id: "2024-jan27-shift1-maths-q5",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
@@ -45,7 +45,7 @@ const questions = [
     explanation: "The sum of coefficients is found by setting x=1. Thus A=(1−3+10)ⁿ=8ⁿ and B=(1+1)ⁿ=2ⁿ. Therefore A=B³."
   },
   {
-    id: "2024-jan27-shift1-maths-q6",
+    id: "2024-jan27-shift1-maths-q16",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
@@ -59,7 +59,7 @@ const questions = [
     explanation: "The common terms are 9, 24, 39, 54, 69, 84 and 99. Both lists end before the next common term, so there are 7 common terms."
   },
   {
-    id: "2024-jan27-shift1-maths-q8",
+    id: "2024-jan27-shift1-maths-q13",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
@@ -73,7 +73,7 @@ const questions = [
     explanation: "Using the skew-lines distance formula gives 6/√5 = |2(λ−4)|/√5. Hence |λ−4|=3, so λ=1 or 7 and their sum is 8."
   },
   {
-    id: "2024-jan27-shift1-maths-q9",
+    id: "2024-jan27-shift1-maths-q1",
     verified: true,
     source_url: "https://image-static.collegedunia.com/public/questions/jee-main/2024/1792410752_JEE-Main-2024-Paper-1-B-E-B-Tech-Jan-27-Shift-1-Official-Question-Paper-PDF.pdf",
     answer_key_url: "https://nta.ac.in/download/notice/notice_20240212120843.pdf",
