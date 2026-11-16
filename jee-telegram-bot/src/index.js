@@ -5,8 +5,8 @@ const MAIN_MENU = {
   keyboard: [
     [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
     [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
-    [{ text: "📊 Available Topics" }, { text: "🆘 Help" }],
-    [{ text: "🛑 Stop Quiz" }]
+    [{ text: "📊 Available Topics" }, { text: "📝 Full PYQ Paper" }],
+    [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
   is_persistent: true,
