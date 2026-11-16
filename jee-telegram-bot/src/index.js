@@ -1,123 +1,20 @@
 import questions from "../data/questions.js";
 
 const TG = "https://api.telegram.org";
-
 const MAIN_MENU = {
   keyboard: [
-    [{ text: "🎯 Mixed Quiz" }, { text: "📚 Subjects" }],
-    [{ text: "📖 Chapter Quiz" }, { text: "📊 Available Topics" }],
-    [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
+    [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
+    [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
+    [{ text: "📊 Available Topics" }, { text: "🆘 Help" }],
+    [{ text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
   is_persistent: true,
-  input_field_placeholder: "Type: 20 Physics questions from Rotation"
+  input_field_placeholder: "Type: Create 20 difficult Physics questions on Rotation"
 };
 
-async function showMainMenu(env, chatId, message = "Choose a section from the menu below.") {
-  await telegram(env, "sendMessage", { chat_id: chatId, text: message, reply_markup: MAIN_MENU });
-}
-
-async function showSubjects(env, chatId) {
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: "Choose a subject:",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "⚡ Physics", callback_data: "subject:physics" }],
-        [{ text: "🧪 Chemistry", callback_data: "subject:chemistry" }],
-        [{ text: "📐 Mathematics", callback_data: "subject:maths" }],
-        [{ text: "🎯 Mixed Quiz", callback_data: "subject:mixed" }]
-      ]
-    }
-  });
-}
-
-
-async function showTopicSubjects(env, chatId) {
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: "📖 Choose a subject to browse its available chapters:",
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "⚡ Physics", callback_data: "topic-subject:physics" }],
-        [{ text: "🧪 Chemistry", callback_data: "topic-subject:chemistry" }],
-        [{ text: "📐 Mathematics", callback_data: "topic-subject:maths" }]
-      ]
-    }
-  });
-}
-
-async function showTopics(env, chatId, subject) {
-  const available = [...new Map(questions.filter(validQuestion)
-    .filter(q => !subject || q.subject.toLowerCase() === subject)
-    .map(q => {
-      const topic = q.topic || q.chapter;
-      return [normalizeTopic(topic), topic];
-    })).values()];
-  if (!available.length) {
-    await telegram(env, "sendMessage", {
-      chat_id: chatId,
-      text: subject ? `No verified chapters are available for ${subject} yet.` : "No verified chapters are available yet.",
-      reply_markup: MAIN_MENU
-    });
-    return;
-  }
-  const buttons = available.map(topic => [{
-    text: `📘 ${topic}`.slice(0, 60),
-    callback_data: `topic:${subject}:${normalizeTopic(topic)}`.slice(0, 64)
-  }]);
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: `Choose a chapter/topic in ${subject}:`,
-    reply_markup: { inline_keyboard: buttons }
-  });
-}
-
-
-async function askQuestionCount(env, chatId, subject = null, topic = null) {
-  await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify({ subject, topic }), { expirationTtl: 600 });
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: "How many questions would you like?",
-    reply_markup: { inline_keyboard: [
-      [{ text: "5", callback_data: "count:5" }, { text: "10", callback_data: "count:10" }],
-      [{ text: "15", callback_data: "count:15" }, { text: "20", callback_data: "count:20" }],
-      [{ text: "25", callback_data: "count:25" }, { text: "All available", callback_data: "count:all" }]
-    ]}
-  });
-}
-
-async function understandQuizRequest(env, chatId, rawText) {
-  if (!env.GEMINI_API_KEY) {
-    await telegram(env, "sendMessage", { chat_id: chatId, text: "Try: Give me 15 difficult Physics questions from Rotational Motion." });
-    return;
-  }
-  const prompt = 'Convert this message into quiz settings. Return ONLY JSON: {"action":"quiz|help","subject":"physics|chemistry|maths|mixed","topic":"","count":10}. Understand informal language, typos and Hinglish. Default count 10. Do not invent a topic. If not a JEE quiz, action=help. Message: ' + rawText;
-  try {
-    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 200 } })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || "Gemini request failed");
-    const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
-    const parsed = JSON.parse(raw);
-    const subject = String(parsed.subject || "").toLowerCase();
-    if (parsed.action !== "quiz" || !["physics", "chemistry", "maths", "mixed"].includes(subject)) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "Try requests like:\n• 20 Physics questions\n• 10 Chemistry questions from Chemical Bonding\n• Maths quiz on Integration\n• 15 mixed JEE PYQs" });
-      return;
-    }
-    const count = Math.max(1, Math.min(100, Number.parseInt(parsed.count, 10) || 10));
-    await startQuiz(env, chatId, subject === "mixed" ? null : subject, parsed.topic || null, count);
-  } catch (error) {
-    console.error("AI request understanding failed", String(error));
-    await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't understand that. Try: Give me 15 Physics questions from Rotational Motion." });
-  }
-}
-
 async function telegram(env, method, body) {
-  const response = await fetch(`${TG}/bot${env.TELEGRAM_TOKEN}/${method}`, {
+  const response = await fetch(TG + "/bot" + env.TELEGRAM_TOKEN + "/" + method, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body)
@@ -125,24 +22,25 @@ async function telegram(env, method, body) {
   const result = await response.json();
   if (!response.ok || !result.ok) {
     console.error("Telegram API failure", method, result);
-    throw new Error(`Telegram API request failed: ${method}`);
+    throw new Error("Telegram API request failed: " + method);
   }
   return result;
 }
 
 function validQuestion(q) {
-  return q &&
-    q.verified === true &&
-    typeof q.source_url === "string" &&
-    /^https?:\/\//i.test(q.source_url) &&
+  return q && q.verified === true &&
+    typeof q.source_url === "string" && /^https?:\/\//i.test(q.source_url) &&
     ["physics", "chemistry", "maths"].includes(String(q.subject).toLowerCase()) &&
     typeof q.question === "string" &&
     (typeof q.topic === "string" || typeof q.chapter === "string") &&
-    Array.isArray(q.options) &&
-    q.options.length === 4 &&
+    Array.isArray(q.options) && q.options.length === 4 &&
     q.options.every(x => typeof x === "string" && x.trim()) &&
-    Number.isInteger(q.answer) &&
-    q.answer >= 0 && q.answer < 4;
+    Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4;
+}
+
+function normalizeTopic(value) {
+  return String(value || "").toLowerCase().trim()
+    .replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
 function shuffled(items) {
@@ -154,271 +52,470 @@ function shuffled(items) {
   return a;
 }
 
+async function showMainMenu(env, chatId, message) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: message || "Choose a quiz mode below.",
+    reply_markup: MAIN_MENU
+  });
+}
+
+async function askQuestionCount(env, chatId, subject, topic) {
+  await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify({
+    subject: subject || null, topic: topic || null
+  }), { expirationTtl: 600 });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "How many verified PYQs do you want?",
+    reply_markup: { inline_keyboard: [
+      [{ text: "5", callback_data: "count:5" }, { text: "10", callback_data: "count:10" }],
+      [{ text: "15", callback_data: "count:15" }, { text: "20", callback_data: "count:20" }],
+      [{ text: "25", callback_data: "count:25" }, { text: "All available", callback_data: "count:all" }]
+    ]}
+  });
+}
+
+async function showSubjects(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Choose a subject for PYQ practice:",
+    reply_markup: { inline_keyboard: [
+      [{ text: "⚡ Physics", callback_data: "subject:physics" }],
+      [{ text: "🧪 Chemistry", callback_data: "subject:chemistry" }],
+      [{ text: "📐 Mathematics", callback_data: "subject:maths" }],
+      [{ text: "🎯 Mixed", callback_data: "subject:mixed" }]
+    ]}
+  });
+}
+
+async function showTopicSubjects(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Choose a subject to browse available PYQ chapters:",
+    reply_markup: { inline_keyboard: [
+      [{ text: "⚡ Physics", callback_data: "topic-subject:physics" }],
+      [{ text: "🧪 Chemistry", callback_data: "topic-subject:chemistry" }],
+      [{ text: "📐 Mathematics", callback_data: "topic-subject:maths" }]
+    ]}
+  });
+}
+
+async function showTopics(env, chatId, subject) {
+  const topics = [...new Map(questions.filter(validQuestion)
+    .filter(q => q.subject.toLowerCase() === subject)
+    .map(q => [normalizeTopic(q.topic || q.chapter), q.topic || q.chapter])).values()];
+  if (!topics.length) {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "No verified chapters for this subject have been added yet." });
+    return;
+  }
+  await telegram(env, "sendMessage", {
+    chat_id: chatId, text: "Select a chapter:",
+    reply_markup: { inline_keyboard: topics.map(t => [{
+      text: "📘 " + t, callback_data: "topic:" + subject + ":" + normalizeTopic(t)
+    }]) }
+  });
+}
+
+async function callGemini(env, prompt, maxTokens) {
+  if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is missing");
+  const response = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.2, responseMimeType: "application/json",
+          maxOutputTokens: maxTokens || 8192
+        }
+      })
+    }
+  );
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || "Gemini request failed");
+  const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
+  if (!raw) throw new Error("Gemini returned an empty response");
+  return JSON.parse(raw);
+}
+
+async function interpretRequest(env, rawText, forceAi) {
+  const prompt = [
+    "Interpret the user's request for a JEE Main practice test.",
+    "Return only JSON with keys action, mode, subject, topic, count, difficulty, questionType.",
+    'mode must be "pyq" for real past-year questions, or "ai" for newly AI-created practice questions.',
+    "Use mode ai if the user says create, generate, make, custom, new questions, according to me, or asks for an AI quiz. Otherwise use pyq.",
+    'subject must be physics, chemistry, maths, or mixed. topic is a concise chapter name or empty string.',
+    "count must be an integer from 1 to 30. Default 10. difficulty is easy, moderate, difficult, or mixed. Default moderate.",
+    'questionType can be mcq, numerical-style-mcq, or mixed. Default mcq. This bot currently supports four-option MCQs only.',
+    "Understand typos, informal English and Hinglish. Do not invent a topic. If not a JEE quiz use action help.",
+    "User request: " + rawText,
+    "Force AI-created mode: " + (forceAi ? "yes" : "no")
+  ].join("\n");
+  const parsed = await callGemini(env, prompt, 500);
+  if (parsed.action !== "quiz" ||
+      !["physics", "chemistry", "maths", "mixed"].includes(String(parsed.subject).toLowerCase())) {
+    return { action: "help" };
+  }
+  return {
+    action: "quiz",
+    mode: forceAi ? "ai" : (parsed.mode === "ai" ? "ai" : "pyq"),
+    subject: String(parsed.subject).toLowerCase(),
+    topic: String(parsed.topic || "").trim(),
+    count: Math.max(1, Math.min(30, Number.parseInt(parsed.count, 10) || 10)),
+    difficulty: ["easy", "moderate", "difficult", "mixed"].includes(String(parsed.difficulty).toLowerCase())
+      ? String(parsed.difficulty).toLowerCase() : "moderate",
+    questionType: String(parsed.questionType || "mcq")
+  };
+}
+
+async function generateAiQuestions(env, settings, originalRequest) {
+  const prompt = [
+    "Create a complete JEE Main practice test as valid JSON only.",
+    'Return {"questions":[{"subject":"physics","topic":"...","question":"...","options":["A","B","C","D"],"answer":0,"explanation":"..."}]}.',
+    "Generate exactly " + settings.count + " distinct questions.",
+    "Subject: " + settings.subject + ". Chapter: " + (settings.topic || "balanced across the subject") + ".",
+    "Difficulty: " + settings.difficulty + ". Question format: four-option single-correct MCQ.",
+    "Make questions JEE Main level, include calculations/reasoning when appropriate, and vary concepts.",
+    "Every question must be self-contained. Check calculations and answer index carefully.",
+    "The explanation must show the actual solution step by step and justify the correct option.",
+    "Do not copy or claim these are actual PYQs. Do not invent year, date, shift, or NTA source.",
+    "Do not include markdown fences or text outside JSON.",
+    "User's exact instructions: " + originalRequest
+  ].join("\n");
+  const parsed = await callGemini(env, prompt, 8192);
+  if (!Array.isArray(parsed.questions)) throw new Error("AI did not return a question array");
+  const generated = parsed.questions.slice(0, settings.count).map((q, i) => ({
+    id: "ai-" + Date.now() + "-" + i,
+    subject: ["physics", "chemistry", "maths"].includes(String(q.subject).toLowerCase())
+      ? String(q.subject).toLowerCase() : (settings.subject === "mixed" ? "physics" : settings.subject),
+    topic: String(q.topic || settings.topic || "Mixed concepts"),
+    question: String(q.question || ""),
+    options: Array.isArray(q.options) ? q.options.map(x => String(x)) : [],
+    answer: Number(q.answer),
+    explanation: String(q.explanation || "")
+  })).filter(q => q.question && q.options.length === 4 &&
+    q.options.every(x => x.trim()) && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4);
+  if (!generated.length) throw new Error("AI returned no valid questions");
+  return generated;
+}
+
 async function explainWithGemini(env, q) {
   if (q.explanation && q.explanation.trim()) return q.explanation;
-  if (!env.GEMINI_API_KEY) return "A verified explanation has not been added yet.";
-
   const prompt = [
-    "Explain this JEE Main multiple-choice question step by step.",
-    "Do not change the supplied answer. If information is insufficient, say so.",
-    `Subject: ${q.subject}`,
-    `Question: ${q.question}`,
-    ...q.options.map((o, i) => `Option ${i + 1}: ${o}`),
-    `Verified correct option: ${q.answer + 1}. ${q.options[q.answer]}`
+    "Solve this JEE Main question step by step. Do not change the verified answer.",
+    "Subject: " + q.subject, "Question: " + q.question,
+    ...q.options.map((o, i) => "Option " + (i + 1) + ": " + o),
+    "Verified correct option: " + (q.answer + 1) + ". " + q.options[q.answer]
   ].join("\n");
-
   try {
-    const response = await fetch(
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": env.GEMINI_API_KEY
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 700 }
-        })
-      }
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      console.error("Gemini API failure", data);
-      return "Gemini could not generate an explanation right now.";
-    }
-    return data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n").trim()
-      || "Explanation is unavailable.";
-  } catch (error) {
-    console.error("Gemini request failed", String(error));
-    return "Gemini could not generate an explanation right now.";
+    const result = await callGemini(env, prompt, 700);
+    return String(result.explanation || result.solution || JSON.stringify(result));
+  } catch (e) {
+    console.error("Explanation generation failed", String(e));
+    return "Solution could not be generated. Correct answer: " + q.options[q.answer];
   }
 }
 
-async function sendNext(env, chatId, state) {
-  if (state.index >= state.questions.length) {
-    await telegram(env, "sendMessage", {
-      chat_id: chatId,
-      text: `🏁 Quiz complete!\nScore: ${state.score}/${state.questions.length}\nCorrect: ${state.score}\nIncorrect: ${state.questions.length - state.score}`
-    });
-    await env.QUIZ_STATE.delete(`quiz:${chatId}`);
-    return;
-  }
+function examClock(state) {
+  const elapsed = Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000));
+  const total = state.durationSeconds || state.questions.length * 144;
+  const left = Math.max(0, total - elapsed);
+  const mm = String(Math.floor(left / 60)).padStart(2, "0");
+  const ss = String(left % 60).padStart(2, "0");
+  return { elapsed, left, label: mm + ":" + ss };
+}
 
+async function renderQuestion(env, chatId, state, messageId) {
   const q = state.questions[state.index];
-  await env.QUIZ_STATE.put(`quiz:${chatId}`, JSON.stringify(state), { expirationTtl: 7200 });
-
-  const keyboard = q.options.map((option, i) => [{
-    text: `${i + 1}. ${option.slice(0, 55)}`,
-    callback_data: `a:${state.index}:${i}`
-  }]);
-
-  const examParts = String(q.shift || "").split("·").map(part => part.trim()).filter(Boolean);
-  const examLine = ["JEE MAIN", q.year, ...examParts].filter(Boolean).join(" | ");
+  const isAi = state.mode === "ai";
+  const clock = examClock(state);
+  const selected = state.answers[state.index];
+  const marked = state.marked.includes(state.index);
   const safe = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    parse_mode: "HTML",
-    disable_web_page_preview: true,
-    text:
-      `<b>📘 JEE MAIN ${safe(String(q.subject).toUpperCase())} — PYQ</b>\n` +
-      (examLine ? `<i>${safe(examLine)}</i>\n` : "") +
-      `<b>Question ${state.index + 1}/${state.questions.length}</b>\n` +
-      `<b>Chapter:</b> ${safe(q.topic || q.chapter || "Not specified")}\n\n` +
-      `<b>Question</b>\n${safe(q.question)}\n\n` +
-      q.options.map((option, i) => `<b>${String.fromCharCode(65+i)}.</b> ${safe(option)}`).join("\n"),
-    reply_markup: { inline_keyboard: keyboard }
+  const header = isAi ? "🤖 AI-GENERATED PRACTICE" : "📘 JEE MAIN PYQ";
+  const examLine = !isAi ? ["JEE MAIN", q.year, q.shift].filter(Boolean).join(" | ") : "";
+  const options = q.options.map((option, i) => [{
+    text: (selected === i ? "🔘 " : "◯ ") + String.fromCharCode(65 + i) + ". " + option.slice(0, 48),
+    callback_data: "pick:" + state.index + ":" + i
+  }]);
+  const controls = [
+    [
+      { text: "⬅ Previous", callback_data: "nav:prev" },
+      { text: "➡ Next", callback_data: "nav:next" },
+      { text: "⏭ Skip", callback_data: "nav:skip" }
+    ],
+    [
+      { text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" },
+      { text: "📋 Submit paper", callback_data: "nav:submit" }
+    ]
+  ];
+  const palette = state.questions.map((_, i) => {
+    const icon = state.marked.includes(i) ? "🟨" : (state.answers[i] !== undefined ? "🟩" : "⬜");
+    return { text: icon + (i + 1), callback_data: "nav:q" + i };
   });
-}
-
-function normalizeTopic(value) {
-  return String(value || "").toLowerCase().trim()
-    .replace(/&/g, "and")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-async function startQuiz(env, chatId, subject, topic, requestedCount = 10) {
-  const bank = questions.filter(validQuestion);
-  const chosen = shuffled(bank.filter(q => {
-    const subjectMatches = !subject || q.subject.toLowerCase() === subject;
-    const storedTopic = normalizeTopic(q.topic || q.chapter);
-    const topicMatches = !topic || storedTopic === normalizeTopic(topic);
-    return subjectMatches && topicMatches;
-  })).slice(0, Math.max(1, Math.min(100, requestedCount)));
-
-  if (!chosen.length) {
-    await telegram(env, "sendMessage", {
-      chat_id: chatId,
-      text: "The verified question bank is not populated yet. Questions will appear after official papers and final answer keys have been checked and added."
-    });
-    return;
+  const paletteRows = [];
+  for (let i = 0; i < palette.length; i += 5) paletteRows.push(palette.slice(i, i + 5));
+  const text =
+    "<b>" + header + "</b>\n" +
+    (examLine ? "<i>" + safe(examLine) + "</i>\n" : "") +
+    "<b>Question " + (state.index + 1) + "/" + state.questions.length + "</b>   ⏱ " + clock.label + "\n" +
+    "<b>Chapter:</b> " + safe(q.topic || q.chapter || "Mixed") + "\n\n" +
+    safe(q.question) + "\n\n" +
+    q.options.map((o, i) => "<b>" + String.fromCharCode(65 + i) + ".</b> " + safe(o)).join("\n") +
+    "\n\n" + (selected === undefined ? "Not answered" : "Your answer: " + String.fromCharCode(65 + selected)) +
+    (marked ? "\n⭐ Marked for review" : "");
+  const reply_markup = { inline_keyboard: [...options, ...controls, ...paletteRows] };
+  if (messageId) {
+    try {
+      await telegram(env, "editMessageText", {
+        chat_id: chatId, message_id: messageId, text, parse_mode: "HTML",
+        reply_markup, disable_web_page_preview: true
+      });
+      return messageId;
+    } catch (e) {
+      console.error("Could not edit question message; sending new one", String(e));
+    }
   }
+  const sent = await telegram(env, "sendMessage", {
+    chat_id: chatId, text, parse_mode: "HTML",
+    reply_markup, disable_web_page_preview: true
+  });
+  return sent.result.message_id;
+}
 
-  const state = { questions: chosen, index: 0, score: 0, answered: false };
-  await env.QUIZ_STATE.put(`quiz:${chatId}`, JSON.stringify(state), { expirationTtl: 7200 });
+async function saveState(env, chatId, state) {
+  await env.QUIZ_STATE.put("quiz:" + chatId, JSON.stringify(state), { expirationTtl: 10800 });
+}
+
+async function startQuiz(env, chatId, settings, originalRequest) {
+  let chosen;
+  if (settings.mode === "ai") {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "🤖 Gemini is creating your full test. Please wait..." });
+    chosen = await generateAiQuestions(env, settings, originalRequest);
+  } else {
+    const bank = questions.filter(validQuestion);
+    const wantedTopic = normalizeTopic(settings.topic);
+    chosen = shuffled(bank.filter(q => {
+      const subjectOk = settings.subject === "mixed" || q.subject.toLowerCase() === settings.subject;
+      const topic = normalizeTopic(q.topic || q.chapter);
+      const topicOk = !wantedTopic || topic.includes(wantedTopic) || wantedTopic.includes(topic);
+      return subjectOk && topicOk;
+    })).slice(0, settings.count);
+    if (!chosen.length) {
+      await telegram(env, "sendMessage", {
+        chat_id: chatId,
+        text: "No verified PYQs match this selection yet. Choose 🤖 AI Quiz to generate new practice questions. The stored PYQ bank currently has only " + bank.length + " verified entries."
+      });
+      return;
+    }
+  }
+  const state = {
+    mode: settings.mode, questions: chosen, index: 0, answers: {}, marked: [],
+    startedAt: Date.now(), durationSeconds: chosen.length * 144, messageId: null
+  };
+  await saveState(env, chatId, state);
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: `Starting your ${subject || "mixed"} JEE Main PYQ quiz${topic ? ` — ${topic}` : ""}: ${chosen.length} questions.\nChoose an option for each question.`
+    text: (settings.mode === "ai" ? "🤖 AI practice test ready." : "📘 PYQ paper ready.") +
+      "\nQuestions: " + chosen.length +
+      "\nTime limit: " + Math.floor(state.durationSeconds / 60) + " minutes" +
+      "\nChoose an option, use Skip/Previous/Mark for Review, and submit when finished. Answers and solutions stay hidden until submission."
   });
-  await sendNext(env, chatId, state);
+  state.messageId = await renderQuestion(env, chatId, state);
+  await saveState(env, chatId, state);
+}
+
+async function submitQuiz(env, chatId, state) {
+  const key = "quiz:" + chatId;
+  let score = 0, attempted = 0;
+  for (let i = 0; i < state.questions.length; i++) {
+    const a = state.answers[i];
+    if (a !== undefined) {
+      attempted++;
+      if (a === state.questions[i].answer) score++;
+    }
+  }
+  const wrong = attempted - score;
+  const unanswered = state.questions.length - attempted;
+  const elapsed = examClock(state).elapsed;
+  await env.QUIZ_STATE.delete(key);
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "🏁 PAPER SUBMITTED\n\n" +
+      "Score: " + score + "/" + state.questions.length +
+      "\nCorrect: " + score + "\nWrong: " + wrong +
+      "\nUnattempted: " + unanswered +
+      "\nAccuracy: " + (attempted ? Math.round(score * 100 / attempted) : 0) + "%" +
+      "\nTime taken: " + Math.floor(elapsed / 60) + "m " + (elapsed % 60) + "s" +
+      "\n\n📖 Detailed solutions follow below."
+  });
+  for (let i = 0; i < state.questions.length; i++) {
+    const q = state.questions[i];
+    const chosen = state.answers[i];
+    const solution = await explainWithGemini(env, q);
+    const label = chosen === undefined ? "Not attempted" :
+      (chosen === q.answer ? "Correct" : "Wrong");
+    const heading = "Q" + (i + 1) + " — " + label +
+      "\nYour answer: " + (chosen === undefined ? "—" : q.options[chosen]) +
+      "\nCorrect answer: " + q.options[q.answer] +
+      "\n\nSolution:\n";
+    const body = heading + solution;
+    for (let offset = 0; offset < body.length; offset += 3800) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: body.slice(offset, offset + 3800) });
+    }
+  }
+  await showMainMenu(env, chatId, "Test review complete. Start another paper whenever you're ready.");
 }
 
 async function handleMessage(env, message) {
   const chatId = message.chat.id;
-  const text = (message.text || "").trim().toLowerCase().replace(/\s+/g, " ");
-
+  const raw = (message.text || "").trim();
+  const text = raw.toLowerCase().replace(/\s+/g, " ");
   if (text === "/start") {
-    await showMainMenu(env, chatId, "Welcome to JEE Main PYQ Quiz Bot!\nChoose a section using the menu button beside the message box.");
-  } else if (text === "/help" || text === "🆘 help") {
-    await showMainMenu(env, chatId, "JEE Main Quiz Bot\n\n🎯 Mixed Quiz: random questions from all subjects\n📚 Subjects: choose Physics, Chemistry or Maths\n📖 Chapter Quiz: start a topic-wise quiz\n📊 Available Topics: browse chapters in the verified bank\n\n🤖 You can type naturally, e.g. “Give me 20 Physics questions from Rotational Motion” or “10 mixed JEE questions”.\n🛑 Stop Quiz: end your current quiz");
-  } else if (text === "📚 subjects") {
-    await showSubjects(env, chatId);
-  } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
-    await askQuestionCount(env, chatId, null);
-  } else if (text === "📖 chapter quiz") {
-    await showTopicSubjects(env, chatId);
-  } else if (text === "📊 available topics" || text === "/topics") {
-    await showTopicSubjects(env, chatId);
-  } else if (text === "⚡ physics" || text === "/physics") {
-    await askQuestionCount(env, chatId, "physics");
-  } else if (text === "🧪 chemistry" || text === "/chemistry") {
-    await askQuestionCount(env, chatId, "chemistry");
-  } else if (text === "📐 mathematics" || text === "/maths") {
-    await askQuestionCount(env, chatId, "maths");
-  } else if (text === "🛑 stop quiz" || text === "/stop") {
-    await env.QUIZ_STATE.delete(`quiz:${chatId}`);
-    await showMainMenu(env, chatId, "Quiz stopped. Choose another section below.");
-  } else if (text.startsWith("/topic ")) {
+    await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
+    return;
+  }
+  if (text === "/help" || text === "🆘 help") {
+    await showMainMenu(env, chatId,
+      "JEE Main Test Bot\n\n📘 PYQ mode: verified past-year questions only.\n🤖 AI Quiz: create new questions from your own instructions.\n\nTry:\n• Create 20 difficult Physics questions from Rotation\n• Make 30 mixed JEE questions, moderate level\n• Give me 15 Chemistry PYQs from Chemical Bonding\n\nDuring a paper: select answers, Previous, Next, Skip, Mark for Review, question palette, then Submit. Solutions appear only after submission.\n\nNote: AI questions are practice questions, not official PYQs.");
+    return;
+  }
+  if (text === "🤖 ai quiz") {
+    await env.QUIZ_STATE.put("ai-prompt:" + chatId, "1", { expirationTtl: 600 });
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "Tell me exactly what test you want. Example:\nCreate 25 difficult Physics questions from Rotational Motion, with lengthy calculations."
+    });
+    return;
+  }
+  if (text === "📚 subjects") return showSubjects(env, chatId);
+  if (text === "🎯 mixed pyq" || text === "🎯 mixed quiz" || text === "/quiz") {
+    return askQuestionCount(env, chatId, "mixed", null);
+  }
+  if (text === "📖 chapter pyq" || text === "📖 chapter quiz" || text === "📊 available topics" || text === "/topics") {
+    return showTopicSubjects(env, chatId);
+  }
+  if (text === "🛑 stop quiz" || text === "/stop") {
+    await env.QUIZ_STATE.delete("quiz:" + chatId);
+    await showMainMenu(env, chatId, "Current paper stopped.");
+    return;
+  }
+  const forceAi = Boolean(await env.QUIZ_STATE.get("ai-prompt:" + chatId));
+  if (forceAi) await env.QUIZ_STATE.delete("ai-prompt:" + chatId);
+  if (["⚡ physics", "/physics"].includes(text)) return askQuestionCount(env, chatId, "physics", null);
+  if (["🧪 chemistry", "/chemistry"].includes(text)) return askQuestionCount(env, chatId, "chemistry", null);
+  if (["📐 mathematics", "/maths"].includes(text)) return askQuestionCount(env, chatId, "maths", null);
+  if (text.startsWith("/topic ")) {
     const parts = text.slice(7).trim().split(/\s+/);
     const subject = parts.shift();
     const topic = parts.join(" ");
     if (!["physics", "chemistry", "maths"].includes(subject) || !topic) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "Use: /topic physics rotational-motion\nSubjects: physics, chemistry, maths. Use hyphens for multi-word topics." });
-    } else {
-      await askQuestionCount(env, chatId, subject, topic);
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "Use /topic physics rotational-motion" });
+    } else return askQuestionCount(env, chatId, subject, topic);
+    return;
+  }
+  try {
+    const settings = await interpretRequest(env, raw, forceAi);
+    if (settings.action !== "quiz") {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't identify the test settings. Tell me the subject, chapter, number of questions and difficulty, or tap 🤖 AI Quiz." });
+      return;
     }
-  } else {
-    await understandQuizRequest(env, chatId, message.text || "");
+    if (settings.mode === "pyq" && forceAi) settings.mode = "ai";
+    await startQuiz(env, chatId, settings, raw);
+  } catch (e) {
+    console.error("Quiz request failed", String(e));
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "I couldn't create that test. Try a shorter instruction such as: Create 10 difficult Physics questions from Laws of Motion."
+    });
   }
 }
 
 async function handleCallback(env, callback) {
   const chatId = callback.message.chat.id;
-  const [action, indexText, choiceText] = String(callback.data || "").split(":");
-
-  if (action === "count") {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+  const data = String(callback.data || "");
+  const parts = data.split(":");
+  await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+  if (parts[0] === "count") {
     const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
-    if (!pending) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "Please start the quiz again." });
-      return;
-    }
+    if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please choose the PYQ section again." });
     await env.QUIZ_STATE.delete("pending:" + chatId);
-    const available = questions.filter(validQuestion).filter(q =>
-      (!pending.subject || q.subject.toLowerCase() === pending.subject) &&
-      (!pending.topic || normalizeTopic(q.topic || q.chapter) === normalizeTopic(pending.topic))
+    const bank = questions.filter(validQuestion);
+    const available = bank.filter(q =>
+      (pending.subject === "mixed" || !pending.subject || q.subject.toLowerCase() === pending.subject) &&
+      (!pending.topic || normalizeTopic(q.topic || q.chapter).includes(normalizeTopic(pending.topic)))
     ).length;
-    const requested = indexText === "all" ? available : Number(indexText);
-    if (!Number.isInteger(requested) || requested < 1) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "No verified questions are available for that selection." });
-      return;
+    const count = parts[1] === "all" ? available : Number(parts[1]);
+    return startQuiz(env, chatId, {
+      mode: "pyq", subject: pending.subject || "mixed", topic: pending.topic,
+      count: Math.max(1, Math.min(30, count || 1)), difficulty: "mixed"
+    }, "PYQ menu selection");
+  }
+  if (parts[0] === "subject") {
+    return askQuestionCount(env, chatId, parts[1] === "mixed" ? "mixed" : parts[1], null);
+  }
+  if (parts[0] === "topic-subject") return showTopics(env, chatId, parts[1]);
+  if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
+  const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
+  if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
+  if (examClock(state).left <= 0) return submitQuiz(env, chatId, state);
+  if (parts[0] === "pick") {
+    const index = Number(parts[1]), choice = Number(parts[2]);
+    if (index !== state.index || !Number.isInteger(choice) || choice < 0 || choice > 3) return;
+    state.answers[index] = choice;
+  } else if (parts[0] === "nav") {
+    const action = parts[1];
+    if (action === "submit") {
+      return telegram(env, "sendMessage", {
+        chat_id: chatId, text: "Are you sure you want to submit the paper?",
+        reply_markup: { inline_keyboard: [[
+          { text: "✅ Confirm submit", callback_data: "confirm-submit" },
+          { text: "↩ Continue test", callback_data: "cancel-submit" }
+        ]] }
+      });
     }
-    return startQuiz(env, chatId, pending.subject, pending.topic, requested);
-  }
-  if (action === "subject") {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
-    if (indexText === "mixed") return askQuestionCount(env, chatId, null);
-    return askQuestionCount(env, chatId, indexText);
-  }
-  if (action === "topic-subject") {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
-    return showTopics(env, chatId, indexText);
-  }
-  if (action === "topic") {
-    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
-    const subject = indexText;
-    const topic = choiceText;
-    if (!["physics", "chemistry", "maths"].includes(subject) || !topic) return;
-    return askQuestionCount(env, chatId, subject, topic);
-  }
-  if (action !== "a") return;
-
-  const index = Number(indexText);
-  const choice = Number(choiceText);
-  const key = `quiz:${chatId}`;
-  const state = await env.QUIZ_STATE.get(key, "json");
-
-  if (!state || state.index !== index || state.answered ||
-      !Number.isInteger(choice) || choice < 0 || choice > 3) {
-    await telegram(env, "answerCallbackQuery", {
-      callback_query_id: callback.id,
-      text: "This answer is no longer active."
-    });
-    return;
-  }
-
-  const q = state.questions[index];
-  const correct = choice === q.answer;
-  state.answered = true;
-  if (correct) state.score++;
-
-  await env.QUIZ_STATE.put(key, JSON.stringify(state), { expirationTtl: 7200 });
-  await telegram(env, "answerCallbackQuery", {
-    callback_query_id: callback.id,
-    text: correct ? "Correct!" : "Not quite!"
-  });
-
-  const explanation = await explainWithGemini(env, q);
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text:
-      `${correct ? "✅ Correct!" : "❌ Incorrect!"}\nCorrect answer: ${q.answer + 1}. ${q.options[q.answer]}\n\nExplanation:\n${explanation}\n\nScore: ${state.score}/${index + 1}`
-  });
-
-  state.index++;
-  state.answered = false;
-  await env.QUIZ_STATE.put(key, JSON.stringify(state), { expirationTtl: 7200 });
-  await sendNext(env, chatId, state);
+    if (action === "prev") state.index = Math.max(0, state.index - 1);
+    else if (action === "next" || action === "skip") state.index = Math.min(state.questions.length - 1, state.index + 1);
+    else if (action === "mark") {
+      state.marked = state.marked.includes(state.index)
+        ? state.marked.filter(i => i !== state.index) : [...state.marked, state.index];
+    } else if (action && action[0] === "q") {
+      const target = Number(action.slice(1));
+      if (Number.isInteger(target) && target >= 0 && target < state.questions.length) state.index = target;
+    }
+  } else if (parts[0] === "confirm-submit") {
+    return submitQuiz(env, chatId, state);
+  } else if (parts[0] === "cancel-submit") {
+    // Keep the current paper open; the next render restores the question controls.
+  } else return;
+  await saveState(env, chatId, state);
+  state.messageId = await renderQuestion(env, chatId, state, callback.message.message_id);
+  await saveState(env, chatId, state);
 }
 
 export default {
   async fetch(request, env) {
-    if (request.method === "GET") {
-      return new Response("JEE Main Telegram Quiz Bot is running.");
-    }
+    if (request.method === "GET") return new Response("JEE Main Telegram Quiz Bot is running.");
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET || !env.QUIZ_STATE) {
       return new Response("Bot configuration is incomplete.", { status: 500 });
     }
-
-    const suppliedSecret = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-    if (suppliedSecret !== env.TELEGRAM_WEBHOOK_SECRET) {
+    if (request.headers.get("X-Telegram-Bot-Api-Secret-Token") !== env.TELEGRAM_WEBHOOK_SECRET) {
       return new Response("Unauthorized", { status: 401 });
     }
-
     let update;
-    try {
-      update = await request.json();
-    } catch {
-      return new Response("Invalid JSON", { status: 400 });
-    }
-
-    // Telegram retries webhook deliveries. Ignore an update already processed.
+    try { update = await request.json(); }
+    catch { return new Response("Invalid JSON", { status: 400 }); }
     if (Number.isInteger(update.update_id)) {
-      const updateKey = `update:${update.update_id}`;
+      const updateKey = "update:" + update.update_id;
       if (await env.QUIZ_STATE.get(updateKey)) return new Response("OK");
       await env.QUIZ_STATE.put(updateKey, "1", { expirationTtl: 86400 });
     }
-
     try {
       if (update.message) await handleMessage(env, update.message);
       if (update.callback_query) await handleCallback(env, update.callback_query);
     } catch (error) {
       console.error("Update handling failed", String(error));
-      // Return 200 to avoid repeatedly processing a partially handled quiz update.
     }
-
     return new Response("OK");
   }
 };
