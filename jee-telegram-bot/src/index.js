@@ -166,14 +166,14 @@ async function showTopics(env, chatId, subject) {
 async function callGemini(env, prompt, maxTokens) {
   if (!env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY secret");
   const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
     {
       method: "POST",
       headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {
-          temperature: 0.2, responseMimeType: "application/json",
+          responseMimeType: "application/json",
           maxOutputTokens: maxTokens || 8192
         }
       })
