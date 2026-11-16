@@ -173,9 +173,9 @@ async function generateAiQuestions(env, settings, originalRequest) {
     'Return {"questions":[{"subject":"physics","topic":"...","question":"...","options":["A","B","C","D"],"answer":0,"explanation":"..."}]}.',
     "Generate exactly " + settings.count + " distinct questions.",
     "Subject: " + settings.subject + ". Chapter: " + (settings.topic || "balanced across the subject") + ".",
-    "Difficulty: " + settings.difficulty + ". Question format: four-option single-correct MCQ.",
+    "Difficulty: " + settings.difficulty + ". Question format: four-option single-correct MCQ. If the user asks for numerical questions, make them calculation-heavy numerical-answer-style problems with four numeric choices.",
     "Make questions JEE Main level, include calculations/reasoning when appropriate, and vary concepts.",
-    "Every question must be self-contained. Check calculations and answer index carefully.",
+    "Every question must be self-contained. Check calculations and answer index carefully. The answer field is a ZERO-BASED option index: 0, 1, 2, or 3.",
     "The explanation must show the actual solution step by step and justify the correct option.",
     "Do not copy or claim these are actual PYQs. Do not invent year, date, shift, or NTA source.",
     "Do not include markdown fences or text outside JSON.",
@@ -493,6 +493,24 @@ async function handleCallback(env, callback) {
 }
 
 export default {
+  async scheduled(event, env, ctx) {
+    try {
+      const page = await env.QUIZ_STATE.list({ prefix: "quiz:", limit: 100 });
+      for (const item of page.keys) {
+        const chatId = item.name.slice(5);
+        const state = await env.QUIZ_STATE.get(item.name, "json");
+        if (!state) continue;
+        if (examClock(state).left <= 0) {
+          await submitQuiz(env, chatId, state);
+        } else if (state.messageId) {
+          state.messageId = await renderQuestion(env, chatId, state, state.messageId);
+          await saveState(env, chatId, state);
+        }
+      }
+    } catch (error) {
+      console.error("Scheduled exam timer failed", String(error));
+    }
+  },
   async fetch(request, env) {
     if (request.method === "GET") return new Response("JEE Main Telegram Quiz Bot is running.");
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
