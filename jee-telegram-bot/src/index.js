@@ -366,66 +366,61 @@ function examClock(state) {
 }
 
 async function renderQuestion(env, chatId, state, messageId) {
-  const q = state.questions[state.index];
-  const isAi = state.mode === "ai";
-  const clock = examClock(state);
-  const selected = state.answers[state.index];
-  const marked = state.marked.includes(state.index);
+  const q = state.questions[state.index], review = state.reviewMode === true;
+  const isAi = state.mode === "ai", clock = examClock(state);
+  const selected = state.answers[state.index], marked = state.marked.includes(state.index);
   const safe = value => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const header = isAi ? "🤖 AI-GENERATED PRACTICE" : "📘 JEE MAIN PYQ";
+  const header = review ? "📊 JEE MAIN — PAPER REVIEW" : (isAi ? "🤖 AI-GENERATED PRACTICE" : "📘 JEE MAIN PYQ");
   const examLine = !isAi ? ["JEE MAIN", q.year, q.shift].filter(Boolean).join(" | ") : "";
-  const options = q.options.map((option, i) => [{
-    text: (selected === i ? "🔘 " : "◯ ") + String.fromCharCode(65 + i) + ". " + option.slice(0, 48),
-    callback_data: "pick:" + state.index + ":" + i
-  }]);
-  const controls = [
-    [
-      { text: "⬅ Previous", callback_data: "nav:prev" },
-      { text: "➡ Next", callback_data: "nav:next" },
-      { text: "⏭ Skip", callback_data: "nav:skip" }
-    ],
-    [
-      { text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" },
-      { text: "📋 Submit paper", callback_data: "nav:submit" }
-    ],
+  const options = q.options.map((option, i) => {
+    let prefix = selected === i ? "🔘 " : "◯ ";
+    if (review) prefix = i === q.answer ? "🟩 " : (selected === i ? "🟥 " : "▫️ ");
+    return [{ text: prefix + String.fromCharCode(65 + i) + ". " + option.slice(0, 42),
+      callback_data: review ? "review:noop" : "pick:" + state.index + ":" + i }];
+  });
+  const controls = review ? [[
+    { text: "⬅ Previous", callback_data: "review:prev" },
+    { text: "➡ Next", callback_data: "review:next" }
+  ]] : [
+    [{ text: "⬅ Previous", callback_data: "nav:prev" }, { text: "➡ Next", callback_data: "nav:next" }, { text: "⏭ Skip", callback_data: "nav:skip" }],
+    [{ text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" }, { text: "📋 Submit paper", callback_data: "nav:submit" }],
     [{ text: "🔎 Second-opinion check", callback_data: "verify:current" }]
   ];
   const palette = state.questions.map((_, i) => {
-    const icon = state.marked.includes(i) ? "🟨" :
-      (state.answers[i] !== undefined ? "🟩" :
-      (state.visited?.includes(i) ? "🟥" : "⬜"));
-    return { text: icon + (i + 1), callback_data: "nav:q" + i };
+    let icon;
+    if (review) {
+      const a = state.answers[i];
+      icon = a === undefined ? "⬜" : (a === state.questions[i].answer ? "🟩" : "🟥");
+    } else icon = state.marked.includes(i) ? "🟨" : (state.answers[i] !== undefined ? "🟩" : (state.visited?.includes(i) ? "🟥" : "⬜"));
+    return { text: icon + (i + 1), callback_data: (review ? "review:q" : "nav:q") + i };
   });
   const paletteRows = [];
   for (let i = 0; i < palette.length; i += 5) paletteRows.push(palette.slice(i, i + 5));
-  const text =
-    "<b>" + header + "</b>\n" +
+  const summary = review && state.summary
+    ? "<b>RESULT:</b> " + state.summary.score + "/" + state.questions.length + "  |  🟩 " + state.summary.correct + "  |  🟥 " + state.summary.wrong + "  |  ⬜ " + state.summary.unanswered +
+      "\n<b>Accuracy:</b> " + state.summary.accuracy + "%  •  <b>Time:</b> " + state.summary.time + "\n\n" : "";
+  const explanation = review
+    ? "\n\n<b>Your answer:</b> " + (selected === undefined ? "Not attempted" : String.fromCharCode(65 + selected) + ". " + safe(q.options[selected])) +
+      "\n<b>Correct answer:</b> 🟩 " + String.fromCharCode(65 + q.answer) + ". " + safe(q.options[q.answer]) +
+      "\n<b>Result:</b> " + (selected === undefined ? "⬜ Not attempted" : (selected === q.answer ? "🟩 Correct" : "🟥 Incorrect")) +
+      "\n\n<b>Solution:</b>\n" + safe(q.explanation || "No explanation is available for this question.")
+    : (selected === undefined ? "\n\nNot answered" : "\n\nYour answer: " + String.fromCharCode(65 + selected)) + (marked ? "\n⭐ Marked for review" : "");
+  const text = "<b>" + header + "</b>\n" + summary +
     (examLine ? "<i>" + safe(examLine) + "</i>\n" : "") +
-    "<b>Question " + (state.index + 1) + "/" + state.questions.length + "</b>   ⏱ " + clock.label + "\n" +
-    "<b>Chapter:</b> " + safe(q.topic || q.chapter || "Mixed") + "\n\n" +
-    safe(q.question) + "\n\n" +
-    q.options.map((o, i) => "<b>" + String.fromCharCode(65 + i) + ".</b> " + safe(o)).join("\n") +
-    "\n\n" + (selected === undefined ? "Not answered" : "Your answer: " + String.fromCharCode(65 + selected)) +
-    (marked ? "\n⭐ Marked for review" : "");
-  const reply_markup = { inline_keyboard: [...options, ...controls, ...paletteRows] };
+    "<b>Question " + (state.index + 1) + "/" + state.questions.length + "</b>" + (review ? "" : "   ⏱ " + clock.label) + "\n" +
+    "<b>Chapter:</b> " + safe(q.topic || q.chapter || "Mixed") + "\n\n" + safe(q.question) + "\n\n" +
+    q.options.map((o, i) => "<b>" + String.fromCharCode(65 + i) + ".</b> " + safe(o)).join("\n") + explanation;
+  const reply_markup = { inline_keyboard: [...options, ...controls, ...paletteRows,
+    ...(review ? [[{ text: "🏁 Finish review", callback_data: "review:finish" }]] : [])] };
   if (messageId) {
     try {
-      await telegram(env, "editMessageText", {
-        chat_id: chatId, message_id: messageId, text, parse_mode: "HTML",
-        reply_markup, disable_web_page_preview: true
-      });
+      await telegram(env, "editMessageText", { chat_id: chatId, message_id: messageId, text, parse_mode: "HTML", reply_markup, disable_web_page_preview: true });
       return messageId;
-    } catch (e) {
-      console.error("Could not edit question message; sending new one", String(e));
-    }
+    } catch (e) { console.error("Could not edit question message; sending new one", String(e)); }
   }
-  const sent = await telegram(env, "sendMessage", {
-    chat_id: chatId, text, parse_mode: "HTML",
-    reply_markup, disable_web_page_preview: true
-  });
+  const sent = await telegram(env, "sendMessage", { chat_id: chatId, text, parse_mode: "HTML", reply_markup, disable_web_page_preview: true });
   return sent.result.message_id;
 }
-
 async function saveState(env, chatId, state) {
   await env.QUIZ_STATE.put("quiz:" + chatId, JSON.stringify(state), { expirationTtl: 10800 });
 }
@@ -550,63 +545,35 @@ async function showMistakes(env, chatId) {
 }
 
 async function submitQuiz(env, chatId, state) {
-  const key = "quiz:" + chatId;
+  if (state.reviewMode) return;
   let score = 0, attempted = 0;
   for (let i = 0; i < state.questions.length; i++) {
     const a = state.answers[i];
-    if (a !== undefined) {
-      attempted++;
-      if (a === state.questions[i].answer) score++;
-    }
+    if (a !== undefined) { attempted++; if (a === state.questions[i].answer) score++; }
   }
-  const wrong = attempted - score;
-  const unanswered = state.questions.length - attempted;
+  const wrong = attempted - score, unanswered = state.questions.length - attempted;
   const elapsed = examClock(state).elapsed;
+  const summary = { score, correct: score, wrong, unanswered,
+    accuracy: attempted ? Math.round(score * 100 / attempted) : 0,
+    time: Math.floor(elapsed / 60) + "m " + (elapsed % 60) + "s" };
   const progressKey = "progress:" + chatId;
   const progress = await env.QUIZ_STATE.get(progressKey, "json") || { papers: 0, total: 0, attempted: 0, correct: 0 };
-  progress.papers += 1;
-  progress.total += state.questions.length;
-  progress.attempted += attempted;
-  progress.correct += score;
+  progress.papers++; progress.total += state.questions.length; progress.attempted += attempted; progress.correct += score;
   await env.QUIZ_STATE.put(progressKey, JSON.stringify(progress), { expirationTtl: 31536000 });
   const mistakeKey = "mistakes:" + chatId;
   const oldMistakes = await env.QUIZ_STATE.get(mistakeKey, "json") || [];
-  for (let i=0;i<state.questions.length;i++) {
+  for (let i = 0; i < state.questions.length; i++) {
     if (state.answers[i] !== undefined && state.answers[i] !== state.questions[i].answer) {
       const q = state.questions[i];
       oldMistakes.push({ id:q.id, year:q.year, shift:q.shift, subject:q.subject, topic:q.topic, question:q.question, options:q.options, answer:q.answer, explanation:q.explanation });
     }
   }
   await env.QUIZ_STATE.put(mistakeKey, JSON.stringify(oldMistakes.slice(-50)), { expirationTtl: 31536000 });
-  await env.QUIZ_STATE.delete(key);
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: "🏁 PAPER SUBMITTED\n\n" +
-      "Score: " + score + "/" + state.questions.length +
-      "\nCorrect: " + score + "\nWrong: " + wrong +
-      "\nUnattempted: " + unanswered +
-      "\nAccuracy: " + (attempted ? Math.round(score * 100 / attempted) : 0) + "%" +
-      "\nTime taken: " + Math.floor(elapsed / 60) + "m " + (elapsed % 60) + "s" +
-      "\n\n📖 Detailed solutions follow below."
-  });
-  for (let i = 0; i < state.questions.length; i++) {
-    const q = state.questions[i];
-    const chosen = state.answers[i];
-    const solution = await explainWithGemini(env, q);
-    const label = chosen === undefined ? "Not attempted" :
-      (chosen === q.answer ? "Correct" : "Wrong");
-    const heading = "Q" + (i + 1) + " — " + label +
-      "\nYour answer: " + (chosen === undefined ? "—" : q.options[chosen]) +
-      "\nCorrect answer: " + q.options[q.answer] +
-      "\n\nSolution:\n";
-    const body = heading + solution;
-    for (let offset = 0; offset < body.length; offset += 3800) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: body.slice(offset, offset + 3800) });
-    }
-  }
-  await showMainMenu(env, chatId, "Test review complete. Start another paper whenever you're ready.");
+  state.reviewMode = true; state.summary = summary; state.timed = false; state.index = 0;
+  await saveState(env, chatId, state);
+  state.messageId = await renderQuestion(env, chatId, state, state.messageId);
+  await saveState(env, chatId, state);
 }
-
 async function handleMessage(env, message) {
   const chatId = message.chat.id;
   const raw = (message.text || "").trim();
@@ -750,6 +717,26 @@ async function handleCallback(env, callback) {
   if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
   const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
+  if (state.reviewMode) {
+    if (parts[0] === "review" && parts[1] === "finish") {
+      await env.QUIZ_STATE.delete("quiz:" + chatId);
+      return showMainMenu(env, chatId, "Review completed. Start another paper whenever you're ready.");
+    }
+    if (parts[0] === "review" && parts[1] === "noop") return;
+    if (parts[0] === "review") {
+      const action = parts[1];
+      if (action === "prev") state.index = Math.max(0, state.index - 1);
+      else if (action === "next") state.index = Math.min(state.questions.length - 1, state.index + 1);
+      else if (action.startsWith("q")) {
+        const target = Number(action.slice(1));
+        if (Number.isInteger(target) && target >= 0 && target < state.questions.length) state.index = target;
+      }
+      await saveState(env, chatId, state);
+      state.messageId = await renderQuestion(env, chatId, state, callback.message.message_id);
+      await saveState(env, chatId, state);
+    }
+    return;
+  }
   if (parts[0] === "verify" && parts[1] === "current") {
     const q = state.questions[state.index];
     return verifyQuestionWithGemini(env, chatId, q, state.index + 1);
