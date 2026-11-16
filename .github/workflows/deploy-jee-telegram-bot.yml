@@ -87,15 +87,21 @@ jobs:
       - name: Set Telegram webhook
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          WORKER_URL="https://jee-telegram-quiz.$(npx wrangler whoami 2>/dev/null | awk '/workers.dev/ {print $NF; exit}').workers.dev"
-          # Prefer the deployed URL reported by Wrangler; if unavailable, read it from the deployment output.
-          if [[ "$WORKER_URL" != https://jee-telegram-quiz.*.workers.dev ]]; then
-            echo "Could not determine workers.dev URL. Open the Worker overview in Cloudflare and set the webhook manually."
+          SUBDOMAIN_RESPONSE="$(curl --fail --silent --show-error \
+            -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+            "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          SUBDOMAIN="$(printf '%s' "$SUBDOMAIN_RESPONSE" | jq -r '.result.subdomain // empty')"
+          if [ -z "$SUBDOMAIN" ]; then
+            echo "Cloudflare workers.dev subdomain is not enabled for this account yet."
+            echo "Enable workers.dev in Cloudflare Workers & Pages, then rerun this workflow."
             exit 1
           fi
+          WORKER_URL="https://jee-telegram-quiz.$SUBDOMAIN.workers.dev"
+          echo "Registering Telegram webhook at $WORKER_URL"
           curl --fail --silent --show-error \
             -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
             --data-urlencode "url=$WORKER_URL" \
