@@ -369,13 +369,18 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     chosen = await generateAiQuestions(env, settings, originalRequest);
   } else {
     const bank = questions.filter(validQuestion);
-    const wantedTopic = normalizeTopic(settings.topic);
-    chosen = shuffled(bank.filter(q => {
+    if (settings.fullPaperKey) {
+      const [year, shift] = settings.fullPaperKey.split("|");
+      chosen = shuffled(bank.filter(q => String(q.year) === year && String(q.shift) === shift));
+    } else {
+      const wantedTopic = normalizeTopic(settings.topic);
+      chosen = shuffled(bank.filter(q => {
       const subjectOk = settings.subject === "mixed" || q.subject.toLowerCase() === settings.subject;
       const topic = normalizeTopic(q.topic || q.chapter);
       const topicOk = !wantedTopic || topic.includes(wantedTopic) || wantedTopic.includes(topic);
       return subjectOk && topicOk;
-    })).slice(0, settings.count);
+      })).slice(0, settings.count);
+    }
     if (!chosen.length) {
       await telegram(env, "sendMessage", {
         chat_id: chatId,
@@ -473,6 +478,7 @@ async function handleMessage(env, message) {
   if (text === "📖 chapter pyq" || text === "📖 chapter quiz" || text === "📊 available topics" || text === "/topics") {
     return showTopicSubjects(env, chatId);
   }
+  if (text === "📝 full pyq paper" || text === "/fullpaper") return showFullPaperOptions(env, chatId);
   if (text === "🛑 stop quiz" || text === "/stop") {
     await env.QUIZ_STATE.delete("quiz:" + chatId);
     await showMainMenu(env, chatId, "Current paper stopped.");
@@ -526,10 +532,36 @@ async function handleCallback(env, callback) {
       (!pending.topic || normalizeTopic(q.topic || q.chapter).includes(normalizeTopic(pending.topic)))
     ).length;
     const count = parts[1] === "all" ? available : Number(parts[1]);
-    return startQuiz(env, chatId, {
-      mode: "pyq", subject: pending.subject || "mixed", topic: pending.topic,
-      count: Math.max(1, Math.min(30, count || 1)), difficulty: "mixed"
-    }, "PYQ menu selection");
+    pending.count = Math.max(1, count || 1);
+    pending.mode = "pyq";
+    pending.difficulty = "mixed";
+    return askTimingMode(env, chatId, pending);
+  }
+  if (parts[0] === "timing") {
+    const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
+    if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please start the quiz setup again." });
+    pending.timed = parts[1] !== "untimed";
+    if (pending.timed) {
+      await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify(pending), { expirationTtl: 600 });
+      return askDuration(env, chatId);
+    }
+    await env.QUIZ_STATE.delete("pending:" + chatId);
+    return startQuiz(env, chatId, pending, "PYQ menu selection");
+  }
+  if (parts[0] === "duration") {
+    const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
+    if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please start the quiz setup again." });
+    pending.timed = true;
+    pending.durationSeconds = Number(parts[1]) * 60;
+    await env.QUIZ_STATE.delete("pending:" + chatId);
+    return startQuiz(env, chatId, pending, "PYQ menu selection");
+  }
+  if (parts[0] === "fullpaper") {
+    const key = decodeURIComponent(parts.slice(1).join(":"));
+    const [year, shift] = key.split("|");
+    const selected = questions.filter(validQuestion).filter(q => String(q.year) === year && String(q.shift) === shift);
+    if (selected.length < 75) return telegram(env, "sendMessage", { chat_id: chatId, text: "This shift is not yet a complete 75-question paper." });
+    return askTimingMode(env, chatId, { mode: "pyq", subject: "mixed", topic: null, count: selected.length, fullPaperKey: key, difficulty: "mixed" });
   }
   if (parts[0] === "subject") {
     return askQuestionCount(env, chatId, parts[1] === "mixed" ? "mixed" : parts[1], null);
