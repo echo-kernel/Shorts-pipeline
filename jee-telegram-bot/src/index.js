@@ -115,7 +115,7 @@ async function showTopics(env, chatId, subject) {
 }
 
 async function callGemini(env, prompt, maxTokens) {
-  if (!env.GEMINI_API_KEY) throw new Error("GEMINI_API_KEY is missing");
+  if (!env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY secret");
   const response = await fetch(
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
     {
@@ -130,13 +130,25 @@ async function callGemini(env, prompt, maxTokens) {
       })
     }
   );
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "Gemini request failed");
-  const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
-  if (!raw) throw new Error("Gemini returned an empty response");
-  return JSON.parse(raw);
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = data.error?.message || ("HTTP " + response.status);
+    throw new Error("Gemini API: " + detail);
+  }
+  const candidate = data.candidates?.[0];
+  const raw = candidate?.content?.parts?.map(p => p.text || "").join("").trim();
+  if (!raw) {
+    const reason = candidate?.finishReason || data.promptFeedback?.blockReason || "empty response";
+    throw new Error("Gemini returned no text (" + reason + ")");
+  }
+  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    const reason = candidate?.finishReason || "unknown";
+    throw new Error("Gemini returned incomplete/invalid JSON (" + reason + "). Try fewer questions.");
+  }
 }
-
 async function interpretRequest(env, rawText, forceAi) {
   const prompt = [
     "Interpret the user's request for a JEE Main practice test.",
@@ -168,36 +180,50 @@ async function interpretRequest(env, rawText, forceAi) {
 }
 
 async function generateAiQuestions(env, settings, originalRequest) {
-  const prompt = [
-    "Create a complete JEE Main practice test as valid JSON only.",
-    'Return {"questions":[{"subject":"physics","topic":"...","question":"...","options":["A","B","C","D"],"answer":0,"explanation":"..."}]}.',
-    "Generate exactly " + settings.count + " distinct questions.",
-    "Subject: " + settings.subject + ". Chapter: " + (settings.topic || "balanced across the subject") + ".",
-    "Difficulty: " + settings.difficulty + ". Question format: four-option single-correct MCQ. If the user asks for numerical questions, make them calculation-heavy numerical-answer-style problems with four numeric choices.",
-    "Make questions JEE Main level, include calculations/reasoning when appropriate, and vary concepts.",
-    "Every question must be self-contained. Check calculations and answer index carefully. The answer field is a ZERO-BASED option index: 0, 1, 2, or 3.",
-    "The explanation must show the actual solution step by step and justify the correct option.",
-    "Do not copy or claim these are actual PYQs. Do not invent year, date, shift, or NTA source.",
-    "Do not include markdown fences or text outside JSON.",
-    "User's exact instructions: " + originalRequest
-  ].join("\n");
-  const parsed = await callGemini(env, prompt, 8192);
-  if (!Array.isArray(parsed.questions)) throw new Error("AI did not return a question array");
-  const generated = parsed.questions.slice(0, settings.count).map((q, i) => ({
-    id: "ai-" + Date.now() + "-" + i,
-    subject: ["physics", "chemistry", "maths"].includes(String(q.subject).toLowerCase())
-      ? String(q.subject).toLowerCase() : (settings.subject === "mixed" ? "physics" : settings.subject),
-    topic: String(q.topic || settings.topic || "Mixed concepts"),
-    question: String(q.question || ""),
-    options: Array.isArray(q.options) ? q.options.map(x => String(x)) : [],
-    answer: Number(q.answer),
-    explanation: String(q.explanation || "")
-  })).filter(q => q.question && q.options.length === 4 &&
-    q.options.every(x => x.trim()) && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4);
-  if (!generated.length) throw new Error("AI returned no valid questions");
-  return generated;
+  const all = [];
+  const batchSize = 3;
+  for (let offset = 0; offset < settings.count; offset += batchSize) {
+    const needed = Math.min(batchSize, settings.count - offset);
+    const prompt = [
+      "Create exactly " + needed + " JEE Main practice MCQ questions as valid JSON only.",
+      'Return {"questions":[{"subject":"physics","topic":"...","question":"...","options":["A","B","C","D"],"answer":0,"explanation":"..."}]}.',
+      "Subject: " + settings.subject + ". Chapter: " + (settings.topic || "balanced across the subject") + ".",
+      "Difficulty: " + settings.difficulty + ". Four-option single-correct MCQ. For numerical-style requests, create calculation-heavy questions with four numeric options.",
+      "Each question must be distinct, self-contained and JEE Main level. Check every calculation and answer.",
+      "The answer field is a ZERO-BASED option index: 0, 1, 2, or 3.",
+      "Give a concise but clear step-by-step solution in explanation.",
+      "Never claim these are actual PYQs. Do not invent year, date, shift or source.",
+      "Return exactly " + needed + " questions, with no markdown fences or extra text.",
+      "User instructions: " + originalRequest
+    ].join("\n");
+    let batch = null, lastError = null;
+    for (let attempt = 0; attempt < 2 && !batch; attempt++) {
+      try {
+        const parsed = await callGemini(env, prompt + (attempt ? "\nKeep each question and explanation concise to ensure valid complete JSON." : ""), 8192);
+        if (!Array.isArray(parsed.questions)) throw new Error("Gemini response has no questions array");
+        const valid = parsed.questions.map((q, i) => ({
+          id: "ai-" + Date.now() + "-" + offset + "-" + i,
+          subject: ["physics", "chemistry", "maths"].includes(String(q.subject || "").toLowerCase())
+            ? String(q.subject).toLowerCase() : (settings.subject === "mixed" ? "physics" : settings.subject),
+          topic: String(q.topic || settings.topic || "Mixed concepts"),
+          question: String(q.question || ""),
+          options: Array.isArray(q.options) ? q.options.map(x => String(x)) : [],
+          answer: Number(q.answer),
+          explanation: String(q.explanation || "")
+        })).filter(q => q.question && q.options.length === 4 &&
+          q.options.every(x => x.trim()) && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4);
+        if (valid.length !== needed) throw new Error("Gemini returned " + valid.length + " valid questions; needed " + needed);
+        batch = valid;
+      } catch (e) {
+        lastError = e;
+        console.error("AI question batch failed", offset, String(e));
+      }
+    }
+    if (!batch) throw new Error("Could not generate questions " + (offset + 1) + "–" + (offset + needed) + ": " + String(lastError?.message || lastError));
+    all.push(...batch);
+  }
+  return all;
 }
-
 async function explainWithGemini(env, q) {
   if (q.explanation && q.explanation.trim()) return q.explanation;
   const prompt = [
@@ -423,9 +449,11 @@ async function handleMessage(env, message) {
     await startQuiz(env, chatId, settings, raw);
   } catch (e) {
     console.error("Quiz request failed", String(e));
+    const detail = String(e?.message || e || "Unknown error").slice(0, 500);
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "I couldn't create that test. Try a shorter instruction such as: Create 10 difficult Physics questions from Laws of Motion."
+      text: "❌ I couldn't create the test.\nReason: " + detail +
+        "\n\nTry again with fewer questions, or use 🤖 AI Quiz. If this repeats, send me this exact error so I can fix it."
     });
   }
 }
