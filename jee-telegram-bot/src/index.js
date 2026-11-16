@@ -292,6 +292,7 @@ async function explainWithGemini(env, q) {
 
 function examClock(state) {
   const elapsed = Math.max(0, Math.floor((Date.now() - state.startedAt) / 1000));
+  if (state.timed === false) return { elapsed, left: Infinity, label: "Untimed" };
   const total = state.durationSeconds || state.questions.length * 144;
   const left = Math.max(0, total - elapsed);
   const mm = String(Math.floor(left / 60)).padStart(2, "0");
@@ -385,14 +386,17 @@ async function startQuiz(env, chatId, settings, originalRequest) {
   }
   const state = {
     mode: settings.mode, questions: chosen, index: 0, answers: {}, marked: [],
-    startedAt: Date.now(), durationSeconds: chosen.length * 144, messageId: null
+    startedAt: Date.now(),
+    timed: settings.timed !== false,
+    durationSeconds: settings.timed === false ? null : (settings.durationSeconds || chosen.length * 144),
+    messageId: null
   };
   await saveState(env, chatId, state);
   await telegram(env, "sendMessage", {
     chat_id: chatId,
     text: (settings.mode === "ai" ? "🤖 AI practice test ready." : "📘 PYQ paper ready.") +
       "\nQuestions: " + chosen.length +
-      "\nTime limit: " + Math.floor(state.durationSeconds / 60) + " minutes" +
+      (state.timed ? "\nTime limit: " + Math.floor(state.durationSeconds / 60) + " minutes" : "\nMode: Timeless (no countdown)") +
       "\nChoose an option, use Skip/Previous/Mark for Review, and submit when finished. Answers and solutions stay hidden until submission."
   });
   state.messageId = await renderQuestion(env, chatId, state);
