@@ -605,7 +605,10 @@ async function handleMessage(env, message) {
     await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
     return;
   }
-  if (text === "/sections") return showSections(env, chatId);\n  if (text === "/subjects") return showSubjects(env, chatId);\n  if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);\n  if (text === "/help" || text === "🆘 help") {
+  if (text === "/sections") return showSections(env, chatId);
+  if (text === "/subjects") return showSubjects(env, chatId);
+  if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
+  if (text === "/help" || text === "🆘 help") {
     await showMainMenu(env, chatId,
       "JEE MAIN • SMART PRACTICE\n\n📘 PYQ mode: verified past-year questions only.\n🤖 AI Quiz: create new questions from your own instructions.\n🔎 Second-opinion check: independently ask AI to solve the current question.\n📈 Progress and 🧠 mistake review are saved for your account.\n📊 Bank Coverage shows what is actually loaded.\n\nTry:\n• Create 20 difficult Physics questions from Rotation\n• Make 30 mixed JEE questions, moderate level\n• Give me 15 Chemistry PYQs from Chemical Bonding\n\nDuring a paper: select answers, Previous, Next, Skip, Mark for Review, question palette, then Submit. Solutions appear only after submission.\n\nNote: AI questions are practice questions, not official PYQs.");
     return;
