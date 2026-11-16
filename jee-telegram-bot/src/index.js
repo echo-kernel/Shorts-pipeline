@@ -65,6 +65,45 @@ function shuffled(items) {
   return a;
 }
 
+
+async function configureTelegramMenu(env, chatId) {
+  await telegram(env, "setMyCommands", { commands: [
+    { command: "start", description: "Open the JEE quiz menu" },
+    { command: "sections", description: "Show all quiz sections" },
+    { command: "subjects", description: "Choose Physics, Chemistry or Maths" },
+    { command: "chapters", description: "Browse chapter-wise PYQs" },
+    { command: "years", description: "Choose a PYQ year" },
+    { command: "fullpaper", description: "Open full-paper options" },
+    { command: "coverage", description: "View question-bank coverage" },
+    { command: "progress", description: "View your progress" },
+    { command: "mistakes", description: "Review incorrect answers" },
+    { command: "help", description: "How to use the quiz bot" },
+    { command: "stop", description: "Stop the current quiz" }
+  ]});
+  await telegram(env, "setChatMenuButton", {
+    chat_id: chatId,
+    menu_button: { type: "commands" }
+  });
+}
+
+async function showSections(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📚 JEE QUIZ SECTIONS — choose one:",
+    reply_markup: { inline_keyboard: [
+      [{ text: "🎯 Mixed PYQ", callback_data: "section:mixed" }],
+      [{ text: "📚 Subjects", callback_data: "section:subjects" }],
+      [{ text: "📖 Chapter PYQ", callback_data: "section:chapters" }],
+      [{ text: "📅 PYQ by Year", callback_data: "section:years" }],
+      [{ text: "📝 Full Test (75Q)", callback_data: "section:fullpaper" }],
+      [{ text: "📊 Available Topics", callback_data: "section:topics" }],
+      [{ text: "📊 Bank Coverage", callback_data: "section:coverage" }],
+      [{ text: "📈 My Progress", callback_data: "section:progress" }],
+      [{ text: "🧠 Mistake Review", callback_data: "section:mistakes" }]
+    ]}
+  });
+}
+
 async function showMainMenu(env, chatId, message) {
   await telegram(env, "sendMessage", {
     chat_id: chatId,
@@ -566,7 +605,7 @@ async function handleMessage(env, message) {
     await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
     return;
   }
-  if (text === "/help" || text === "🆘 help") {
+  if (text === "/sections") return showSections(env, chatId);\n  if (text === "/subjects") return showSubjects(env, chatId);\n  if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);\n  if (text === "/help" || text === "🆘 help") {
     await showMainMenu(env, chatId,
       "JEE MAIN • SMART PRACTICE\n\n📘 PYQ mode: verified past-year questions only.\n🤖 AI Quiz: create new questions from your own instructions.\n🔎 Second-opinion check: independently ask AI to solve the current question.\n📈 Progress and 🧠 mistake review are saved for your account.\n📊 Bank Coverage shows what is actually loaded.\n\nTry:\n• Create 20 difficult Physics questions from Rotation\n• Make 30 mixed JEE questions, moderate level\n• Give me 15 Chemistry PYQs from Chemical Bonding\n\nDuring a paper: select answers, Previous, Next, Skip, Mark for Review, question palette, then Submit. Solutions appear only after submission.\n\nNote: AI questions are practice questions, not official PYQs.");
     return;
@@ -635,6 +674,16 @@ async function handleCallback(env, callback) {
   const data = String(callback.data || "");
   const parts = data.split(":");
   await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+  if (parts[0] === "section") {
+    if (parts[1] === "mixed") return askQuestionCount(env, chatId, "mixed", null);
+    if (parts[1] === "subjects") return showSubjects(env, chatId);
+    if (parts[1] === "chapters" || parts[1] === "topics") return showTopicSubjects(env, chatId);
+    if (parts[1] === "years") return showYears(env, chatId);
+    if (parts[1] === "fullpaper") return showFullPaperOptions(env, chatId);
+    if (parts[1] === "coverage") return showBankCoverage(env, chatId);
+    if (parts[1] === "progress") return showProgress(env, chatId);
+    if (parts[1] === "mistakes") return showMistakes(env, chatId);
+  }
   if (parts[0] === "count") {
     const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
     if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please choose the PYQ section again." });
