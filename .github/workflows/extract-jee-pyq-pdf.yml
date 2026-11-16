@@ -1,0 +1,61 @@
+name: Extract JEE PYQs from PDF URL
+
+on:
+  workflow_dispatch:
+    inputs:
+      pdf_url:
+        description: "Direct HTTPS PDF URL from NTA / Aakash / ALLEN / PW / PrepWiser"
+        required: true
+        type: string
+      year:
+        description: "Exam year, e.g. 2026"
+        required: true
+        type: string
+      exam_date:
+        description: "Exam date, e.g. 2026-04-02"
+        required: true
+        type: string
+      shift:
+        description: "Shift, e.g. Shift 1"
+        required: true
+        type: string
+      source_label:
+        description: "Source name"
+        required: false
+        default: "NTA"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install OCR and PDF tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr
+          python -m pip install --disable-pip-version-check PyMuPDF==1.24.14
+      - name: Download PDF and OCR question pages
+        env:
+          PDF_URL: ${{ inputs.pdf_url }}
+          YEAR: ${{ inputs.year }}
+          EXAM_DATE: ${{ inputs.exam_date }}
+          SHIFT: ${{ inputs.shift }}
+          SOURCE_LABEL: ${{ inputs.source_label }}
+        run: |
+          python jee-telegram-bot/tools/extract_pdf_questions.py \\
+            --url "$PDF_URL" --year "$YEAR" --date "$EXAM_DATE" \\
+            --shift "$SHIFT" --source-label "$SOURCE_LABEL"
+      - name: Upload extraction results
+        uses: actions/upload-artifact@v4
+        with:
+          name: jee-pyq-extraction-${{ inputs.year }}-${{ inputs.exam_date }}-${{ inputs.shift }}
+          path: pdf-extraction-output/
+          if-no-files-found: error
+          retention-days: 14
