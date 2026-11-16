@@ -212,24 +212,24 @@ async function callGemini(env, prompt, maxTokens) {
 function interpretRequest(rawText, forceAi) {
   const raw = String(rawText || "").trim();
   const lower = raw.toLowerCase();
-  const explicitPyq = /\\b(pyq|previous[- ]year|past[- ]year|previous year question)\\b/.test(lower);
-  const aiIntent = forceAi || (!explicitPyq && /\\b(ai quiz|create|generate|make me|make a|custom|new questions|practice questions)\\b/.test(lower));
+  const explicitPyq = /\b(pyq|previous[- ]year|past[- ]year|previous year question)\b/.test(lower);
+  const aiIntent = forceAi || (!explicitPyq && /\b(ai quiz|create|generate|make me|make a|custom|new questions|practice questions)\b/.test(lower));
   let subject = "mixed";
-  if (/\\b(physics|phy)\\b/.test(lower)) subject = "physics";
-  else if (/\\b(chemistry|chem)\\b/.test(lower)) subject = "chemistry";
-  else if (/\\b(math|maths|mathematics)\\b/.test(lower)) subject = "maths";
-  const countMatch = lower.match(/\\b(\\d{1,2})\\s*(?:questions?|q(?:uestions?)?)?\\b/);
+  if (/\b(physics|phy)\b/.test(lower)) subject = "physics";
+  else if (/\b(chemistry|chem)\b/.test(lower)) subject = "chemistry";
+  else if (/\b(math|maths|mathematics)\b/.test(lower)) subject = "maths";
+  const countMatch = lower.match(/\b(\d{1,2})\s*(?:questions?|q(?:uestions?)?)?\b/);
   const count = Math.max(1, Math.min(30, countMatch ? Number(countMatch[1]) : 10));
   let topic = "";
-  const topicMatch = raw.match(/\\b(?:from|on|in|chapter(?:\\s+of)?)\\s+(.+?)(?=\\s+(?:with|at|level|difficulty|and)\\b|[,;]|$)/i);
+  const topicMatch = raw.match(/\b(?:from|on|in|chapter(?:\s+of)?)\s+(.+?)(?=\s+(?:with|at|level|difficulty|and)\b|[,;]|$)/i);
   if (topicMatch) {
-    topic = topicMatch[1].replace(/\\b(j ee|jee main|pyqs?|questions?)\\b/ig, "").trim();
+    topic = topicMatch[1].replace(/\b(j ee|jee main|pyqs?|questions?)\b/ig, "").trim();
   }
   let difficulty = "moderate";
-  if (/\\b(easy|basic)\\b/.test(lower)) difficulty = "easy";
-  else if (/\\b(difficult|hard|tough)\\b/.test(lower)) difficulty = "difficult";
-  else if (/\\bmixed difficulty\\b/.test(lower)) difficulty = "mixed";
-  const looksLikeQuiz = /\\b(jee|quiz|test|paper|questions?|pyq|practice)\\b/.test(lower) || forceAi;
+  if (/\b(easy|basic)\b/.test(lower)) difficulty = "easy";
+  else if (/\b(difficult|hard|tough)\b/.test(lower)) difficulty = "difficult";
+  else if (/\bmixed difficulty\b/.test(lower)) difficulty = "mixed";
+  const looksLikeQuiz = /\b(jee|quiz|test|paper|questions?|pyq|practice)\b/.test(lower) || forceAi;
   if (!looksLikeQuiz) return { action: "help" };
   return {
     action: "quiz",
