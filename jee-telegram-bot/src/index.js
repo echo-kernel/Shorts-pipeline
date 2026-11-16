@@ -100,7 +100,7 @@ async function showFullPaperInstructions(env, chatId, pending) {
   await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify(pending), { expirationTtl: 600 });
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "📋 JEE MAIN FULL PAPER — INSTRUCTIONS\\n\\n1. This is an exam-style paper. Try to complete it in one sitting.\\n2. Select one option for each MCQ. Your selected answer is saved automatically.\\n3. Use Previous / Next to move between questions. Skip leaves a question unanswered.\\n4. Use the question palette to jump to any question.\\n5. Palette: ⬜ not visited, 🟥 visited but unanswered, 🟩 answered, 🟨 marked for review.\\n6. Use Mark for Review when you want to revisit a question.\\n7. Submit the paper when finished. You will be asked to confirm. Answers and solutions are shown only after submission.\\n8. The timer runs from the moment the paper starts and the paper auto-submits when time ends.\\n\\nStart the paper now?",
+    text: "📋 JEE MAIN FULL PAPER — INSTRUCTIONS\n\n1. This is an exam-style paper. Try to complete it in one sitting.\n2. Select one option for each MCQ. Your selected answer is saved automatically.\n3. Use Previous / Next to move between questions. Skip leaves a question unanswered.\n4. Use the question palette to jump to any question.\n5. Palette: ⬜ not visited, 🟥 visited but unanswered, 🟩 answered, 🟨 marked for review.\n6. Use Mark for Review when you want to revisit a question.\n7. Submit the paper when finished. You will be asked to confirm. Answers and solutions are shown only after submission.\n8. The timer runs from the moment the paper starts and the paper auto-submits when time ends.\n\nStart the paper now?",
     reply_markup: { inline_keyboard: [
       [{ text: "▶️ Start full paper", callback_data: "fullpaper-start" }],
       [{ text: "↩ Cancel", callback_data: "fullpaper-cancel" }]
@@ -223,7 +223,7 @@ function interpretRequest(rawText, forceAi) {
   let topic = "";
   const topicMatch = raw.match(/\b(?:from|on|in|chapter(?:\s+of)?)\s+(.+?)(?=\s+(?:with|at|level|difficulty|and)\b|[,;]|$)/i);
   if (topicMatch) {
-    topic = topicMatch[1].replace(/\b(j ee|jee main|pyqs?|questions?)\b/ig, "").trim();
+    topic = topicMatch[1].replace(/\b(jee|jee main|pyqs?|questions?)\b/ig, "").trim();
   }
   let difficulty = "moderate";
   if (/\b(easy|basic)\b/.test(lower)) difficulty = "easy";
