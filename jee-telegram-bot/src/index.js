@@ -298,15 +298,8 @@ async function handleMessage(env, message) {
     } else {
       await askQuestionCount(env, chatId, subject, topic);
     }
-  } else if (text === "/physics") {
-    await startQuiz(env, chatId, "physics");
-  } else if (text === "/chemistry") {
-    await startQuiz(env, chatId, "chemistry");
-  } else if (text === "/maths") {
-    await startQuiz(env, chatId, "maths");
-  } else if (text === "/stop") {
-    await env.QUIZ_STATE.delete(`quiz:${chatId}`);
-    await telegram(env, "sendMessage", { chat_id: chatId, text: "Quiz stopped. Send 'start quiz question' to begin again." });
+  } else {
+    await understandQuizRequest(env, chatId, message.text || "");
   }
 }
 
