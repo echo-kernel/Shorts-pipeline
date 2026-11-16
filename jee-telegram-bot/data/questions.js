@@ -156,5 +156,32 @@ const questions = [
     answer: 1,
     explanation: "Displacement is the integral of velocity: x(1) = ∫₀¹(v₀ + gt + Ft²)dt = v₀ + g/2 + F/3."
   }
+,
+  {
+    id: "2021-mar17-evening-physics-q5",
+    verified: true,
+    source_url: "https://allenwebsite-general.s3.ap-south-1.amazonaws.com/allen-website/pdf/jee-main-previous-year-paper/2021/march/1703-PCM-Paper-With-Ans-Sol-Evening.pdf",
+    year: "2021",
+    shift: "17 March · Evening",
+    subject: "physics",
+    topic: "Mechanical Properties of Fluids",
+    question: "At a depth of 2 km in water, the fractional volume compression is 1.36%. Taking water density as 1000 kg m⁻³ and g = 9.8 m s⁻², find the bulk modulus.",
+    options: ["1.96 × 10⁷ Pa", "1.44 × 10⁷ Pa", "2.26 × 10⁹ Pa", "1.44 × 10⁹ Pa"],
+    answer: 3,
+    explanation: "Hydrostatic pressure at depth h is ρgh = 1000 × 9.8 × 2000 = 1.96 × 10⁷ Pa. Bulk modulus B = pressure/(ΔV/V) = 1.96 × 10⁷/0.0136 ≈ 1.44 × 10⁹ Pa."
+  },
+  {
+    id: "2021-mar17-evening-physics-q11",
+    verified: true,
+    source_url: "https://allenwebsite-general.s3.ap-south-1.amazonaws.com/allen-website/pdf/jee-main-previous-year-paper/2021/march/1703-PCM-Paper-With-Ans-Sol-Evening.pdf",
+    year: "2021",
+    shift: "17 March · Evening",
+    subject: "physics",
+    topic: "Current Electricity",
+    question: "Two cells of emfs 2E and E, with internal resistances r₁ and r₂, are connected in series with an external resistance R. Find R when the terminal potential difference across the 2E cell is zero.",
+    options: ["r₁ + r₂", "r₁/2 − r₂", "r₁/2 + r₂", "r₁ − r₂"],
+    answer: 1,
+    explanation: "The series current is I = 3E/(R+r₁+r₂). Zero terminal voltage for the 2E cell means 2E = Ir₁. Substituting and simplifying gives R = r₁/2 − r₂."
+  }
 ];
 export default questions;
