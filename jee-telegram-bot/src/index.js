@@ -73,6 +73,49 @@ async function showTopics(env, chatId, subject) {
   });
 }
 
+
+async function askQuestionCount(env, chatId, subject = null, topic = null) {
+  await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify({ subject, topic }), { expirationTtl: 600 });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "How many questions would you like?",
+    reply_markup: { inline_keyboard: [
+      [{ text: "5", callback_data: "count:5" }, { text: "10", callback_data: "count:10" }],
+      [{ text: "15", callback_data: "count:15" }, { text: "20", callback_data: "count:20" }],
+      [{ text: "25", callback_data: "count:25" }, { text: "All available", callback_data: "count:all" }]
+    ]}
+  });
+}
+
+async function understandQuizRequest(env, chatId, rawText) {
+  if (!env.GEMINI_API_KEY) {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "Try: Give me 15 difficult Physics questions from Rotational Motion." });
+    return;
+  }
+  const prompt = 'Convert this message into quiz settings. Return ONLY JSON: {"action":"quiz|help","subject":"physics|chemistry|maths|mixed","topic":"","count":10}. Understand informal language, typos and Hinglish. Default count 10. Do not invent a topic. If not a JEE quiz, action=help. Message: ' + rawText;
+  try {
+    const response = await fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+      body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: "application/json", maxOutputTokens: 200 } })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error?.message || "Gemini request failed");
+    const raw = data.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("").trim();
+    const parsed = JSON.parse(raw);
+    const subject = String(parsed.subject || "").toLowerCase();
+    if (parsed.action !== "quiz" || !["physics", "chemistry", "maths", "mixed"].includes(subject)) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "Try requests like:\n• 20 Physics questions\n• 10 Chemistry questions from Chemical Bonding\n• Maths quiz on Integration\n• 15 mixed JEE PYQs" });
+      return;
+    }
+    const count = Math.max(1, Math.min(100, Number.parseInt(parsed.count, 10) || 10));
+    await startQuiz(env, chatId, subject === "mixed" ? null : subject, parsed.topic || null, count);
+  } catch (error) {
+    console.error("AI request understanding failed", String(error));
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't understand that. Try: Give me 15 Physics questions from Rotational Motion." });
+  }
+}
+
 async function telegram(env, method, body) {
   const response = await fetch(`${TG}/bot${env.TELEGRAM_TOKEN}/${method}`, {
     method: "POST",
@@ -195,14 +238,14 @@ function normalizeTopic(value) {
     .replace(/^-|-$/g, "");
 }
 
-async function startQuiz(env, chatId, subject, topic) {
+async function startQuiz(env, chatId, subject, topic, requestedCount = 10) {
   const bank = questions.filter(validQuestion);
   const chosen = shuffled(bank.filter(q => {
     const subjectMatches = !subject || q.subject.toLowerCase() === subject;
     const storedTopic = normalizeTopic(q.topic || q.chapter);
     const topicMatches = !topic || storedTopic === normalizeTopic(topic);
     return subjectMatches && topicMatches;
-  })).slice(0, 10);
+  })).slice(0, Math.max(1, Math.min(100, requestedCount)));
 
   if (!chosen.length) {
     await telegram(env, "sendMessage", {
@@ -232,17 +275,17 @@ async function handleMessage(env, message) {
   } else if (text === "📚 subjects") {
     await showSubjects(env, chatId);
   } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
-    await startQuiz(env, chatId, null);
+    await askQuestionCount(env, chatId, null);
   } else if (text === "📖 chapter quiz") {
     await showTopicSubjects(env, chatId);
   } else if (text === "📊 available topics" || text === "/topics") {
     await showTopicSubjects(env, chatId);
   } else if (text === "⚡ physics" || text === "/physics") {
-    await startQuiz(env, chatId, "physics");
+    await askQuestionCount(env, chatId, "physics");
   } else if (text === "🧪 chemistry" || text === "/chemistry") {
-    await startQuiz(env, chatId, "chemistry");
+    await askQuestionCount(env, chatId, "chemistry");
   } else if (text === "📐 mathematics" || text === "/maths") {
-    await startQuiz(env, chatId, "maths");
+    await askQuestionCount(env, chatId, "maths");
   } else if (text === "🛑 stop quiz" || text === "/stop") {
     await env.QUIZ_STATE.delete(`quiz:${chatId}`);
     await showMainMenu(env, chatId, "Quiz stopped. Choose another section below.");
@@ -253,7 +296,7 @@ async function handleMessage(env, message) {
     if (!["physics", "chemistry", "maths"].includes(subject) || !topic) {
       await telegram(env, "sendMessage", { chat_id: chatId, text: "Use: /topic physics rotational-motion\nSubjects: physics, chemistry, maths. Use hyphens for multi-word topics." });
     } else {
-      await startQuiz(env, chatId, subject, topic);
+      await askQuestionCount(env, chatId, subject, topic);
     }
   } else if (text === "/physics") {
     await startQuiz(env, chatId, "physics");
@@ -270,10 +313,30 @@ async function handleMessage(env, message) {
 async function handleCallback(env, callback) {
   const chatId = callback.message.chat.id;
   const [action, indexText, choiceText] = String(callback.data || "").split(":");
+
+  if (action === "count") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+    const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
+    if (!pending) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "Please start the quiz again." });
+      return;
+    }
+    await env.QUIZ_STATE.delete("pending:" + chatId);
+    const available = questions.filter(validQuestion).filter(q =>
+      (!pending.subject || q.subject.toLowerCase() === pending.subject) &&
+      (!pending.topic || normalizeTopic(q.topic || q.chapter) === normalizeTopic(pending.topic))
+    ).length;
+    const requested = indexText === "all" ? available : Number(indexText);
+    if (!Number.isInteger(requested) || requested < 1) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "No verified questions are available for that selection." });
+      return;
+    }
+    return startQuiz(env, chatId, pending.subject, pending.topic, requested);
+  }
   if (action === "subject") {
     await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
-    if (indexText === "mixed") return startQuiz(env, chatId, null);
-    return startQuiz(env, chatId, indexText);
+    if (indexText === "mixed") return askQuestionCount(env, chatId, null);
+    return askQuestionCount(env, chatId, indexText);
   }
   if (action === "topic-subject") {
     await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
@@ -284,7 +347,7 @@ async function handleCallback(env, callback) {
     const subject = indexText;
     const topic = choiceText;
     if (!["physics", "chemistry", "maths"].includes(subject) || !topic) return;
-    return startQuiz(env, chatId, subject, topic);
+    return askQuestionCount(env, chatId, subject, topic);
   }
   if (action !== "a") return;
 
