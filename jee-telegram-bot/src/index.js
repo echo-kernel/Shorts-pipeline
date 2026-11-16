@@ -23,6 +23,18 @@ async function telegram(env, method, body) {
     console.error("Telegram API failure", method, result);
     throw new Error("Telegram API request failed: " + method);
   }
+  // Keep a short list of this bot's recent messages so setup prompts can
+  // be removed when the actual paper begins.
+  if (method === "sendMessage" && result.result?.message_id && body.chat_id && env.QUIZ_STATE) {
+    try {
+      const key = "botmsgs:" + body.chat_id;
+      const ids = await env.QUIZ_STATE.get(key, "json") || [];
+      ids.push(result.result.message_id);
+      await env.QUIZ_STATE.put(key, JSON.stringify(ids.slice(-40)), { expirationTtl: 86400 });
+    } catch (e) {
+      console.error("Could not track bot message", String(e));
+    }
+  }
   return result;
 }
 
@@ -432,24 +444,30 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     durationSeconds: settings.timed === false ? null : (settings.durationSeconds || chosen.length * 144),
     messageId: null
   };
-  await saveState(env, chatId, state);
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: (settings.mode === "ai" ? "🤖 AI practice test ready." : "📘 PYQ paper ready.") +
-      "\nQuestions: " + chosen.length +
-      (state.timed ? "\nTime limit: " + Math.floor(state.durationSeconds / 60) + " minutes" : "\nMode: Timeless (no countdown)") +
-      "\nChoose an option, use Skip/Previous/Mark for Review, and submit when finished. Answers and solutions stay hidden until submission.",
-    reply_markup: { remove_keyboard: true }
+  // Remove setup prompts and old bot messages so only the active paper remains.
+  const messageKey = "botmsgs:" + chatId;
+  const oldMessageIds = await env.QUIZ_STATE.get(messageKey, "json") || [];
+  for (const messageId of oldMessageIds) {
+    try {
+      await telegram(env, "deleteMessage", { chat_id: chatId, message_id: messageId });
+    } catch (e) {
+      // Older messages may already be deleted or outside Telegram's delete window.
+    }
+  }
+  await env.QUIZ_STATE.delete(messageKey);
+
+  // Telegram only hides a reply keyboard after receiving this service message.
+  // Delete the service message immediately so it does not clutter the paper.
+  const hidden = await telegram(env, "sendMessage", {
+    chat_id: chatId, text: " ", reply_markup: { remove_keyboard: true }
   });
+  try {
+    await telegram(env, "deleteMessage", { chat_id: chatId, message_id: hidden.result.message_id });
+  } catch (e) {}
+
+  await saveState(env, chatId, state);
   state.messageId = await renderQuestion(env, chatId, state);
   await saveState(env, chatId, state);
-  // Send ReplyKeyboardRemove after the question message as well, so Telegram
-  // clients hide the persistent bot menu while the user is solving.
-  await telegram(env, "sendMessage", {
-    chat_id: chatId,
-    text: "📝 Test is in progress. Use the buttons on the question to answer and navigate.",
-    reply_markup: { remove_keyboard: true }
-  });
 }
 
 async function submitQuiz(env, chatId, state) {
