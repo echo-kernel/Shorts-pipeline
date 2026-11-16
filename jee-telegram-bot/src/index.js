@@ -444,6 +444,13 @@ async function startQuiz(env, chatId, settings, originalRequest) {
   });
   state.messageId = await renderQuestion(env, chatId, state);
   await saveState(env, chatId, state);
+  // Send ReplyKeyboardRemove after the question message as well, so Telegram
+  // clients hide the persistent bot menu while the user is solving.
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📝 Test is in progress. Use the buttons on the question to answer and navigate.",
+    reply_markup: { remove_keyboard: true }
+  });
 }
 
 async function submitQuiz(env, chatId, state) {
