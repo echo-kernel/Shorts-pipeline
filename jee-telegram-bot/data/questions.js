@@ -115,5 +115,46 @@ const questions = [
     explanation: "The correct order as keyed for this question is Ar > S > Br > F."
   }
 
+,
+  // Additional reviewed PYQs transcribed from ALLEN's publicly hosted solved paper.
+  {
+    id: "2021-mar17-evening-physics-q1",
+    verified: true,
+    source_url: "https://allenwebsite-general.s3.ap-south-1.amazonaws.com/allen-website/pdf/jee-main-previous-year-paper/2021/march/1703-PCM-Paper-With-Ans-Sol-Evening.pdf",
+    year: "2021",
+    shift: "17 March · Evening",
+    subject: "physics",
+    topic: "Kinematics",
+    question: "A ball is dropped from 5 m and after each bounce rises to 81% of the height from which it fell. Taking g = 10 m s⁻², find its average speed over the complete motion.",
+    options: ["3.0 m s⁻¹", "3.50 m s⁻¹", "2.0 m s⁻¹", "2.50 m s⁻¹"],
+    answer: 3,
+    explanation: "The coefficient of restitution is e = √0.81 = 0.9. Total distance is 5 + 2(5e² + 5e⁴ + …) = 5(1+e²)/(1−e²). Total time is √(2h/g)(1+2e+2e²+…). Their ratio gives 2.5 m s⁻¹."
+  },
+  {
+    id: "2021-mar17-evening-physics-q2",
+    verified: true,
+    source_url: "https://allenwebsite-general.s3.ap-south-1.amazonaws.com/allen-website/pdf/jee-main-previous-year-paper/2021/march/1703-PCM-Paper-With-Ans-Sol-Evening.pdf",
+    year: "2021",
+    shift: "17 March · Evening",
+    subject: "physics",
+    topic: "Kinetic Theory of Gases",
+    question: "For one mole of a non-linear polyatomic gas having two vibrational modes, find the ratio β = Cp/Cv.",
+    options: ["1.02", "1.2", "1.25", "1.35"],
+    answer: 1,
+    explanation: "The degrees of freedom are f = 3 translational + 3 rotational + 4 vibrational = 10. Thus Cv = (f/2)R = 5R and Cp = 6R, so β = Cp/Cv = 6/5 = 1.2."
+  },
+  {
+    id: "2021-mar17-evening-physics-q9",
+    verified: true,
+    source_url: "https://allenwebsite-general.s3.ap-south-1.amazonaws.com/allen-website/pdf/jee-main-previous-year-paper/2021/march/1703-PCM-Paper-With-Ans-Sol-Evening.pdf",
+    year: "2021",
+    shift: "17 March · Evening",
+    subject: "physics",
+    topic: "Kinematics",
+    question: "A particle has velocity v(t) = v₀ + gt + Ft² and position x = 0 at t = 0. Find its displacement at t = 1 s.",
+    options: ["v₀ + g + F", "v₀ + g/2 + F/3", "v₀ + g/2 + F", "v₀ + 2g + 3F"],
+    answer: 1,
+    explanation: "Displacement is the integral of velocity: x(1) = ∫₀¹(v₀ + gt + Ft²)dt = v₀ + g/2 + F/3."
+  }
 ];
 export default questions;
