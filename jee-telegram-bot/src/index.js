@@ -2,6 +2,36 @@ import questions from "../data/questions.js";
 
 const TG = "https://api.telegram.org";
 
+const MAIN_MENU = {
+  keyboard: [
+    [{ text: "🎯 Mixed Quiz" }, { text: "📚 Subjects" }],
+    [{ text: "📖 Chapter Quiz" }, { text: "📊 Available Topics" }],
+    [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true,
+  input_field_placeholder: "Choose a JEE quiz section"
+};
+
+async function showMainMenu(env, chatId, message = "Choose a section from the menu below.") {
+  await telegram(env, "sendMessage", { chat_id: chatId, text: message, reply_markup: MAIN_MENU });
+}
+
+async function showSubjects(env, chatId) {
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "Choose a subject:",
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "⚡ Physics", callback_data: "subject:physics" }],
+        [{ text: "🧪 Chemistry", callback_data: "subject:chemistry" }],
+        [{ text: "📐 Mathematics", callback_data: "subject:maths" }],
+        [{ text: "🎯 Mixed Quiz", callback_data: "subject:mixed" }]
+      ]
+    }
+  });
+}
+
 async function telegram(env, method, body) {
   const response = await fetch(`${TG}/bot${env.TELEGRAM_TOKEN}/${method}`, {
     method: "POST",
@@ -149,23 +179,33 @@ async function handleMessage(env, message) {
   const chatId = message.chat.id;
   const text = (message.text || "").trim().toLowerCase().replace(/\s+/g, " ");
 
-  if (text === "/start" || text === "/help") {
-    await telegram(env, "sendMessage", {
-      chat_id: chatId,
-      text: "Welcome to JEE Main PYQ Quiz Bot!\n\nSend:\nstart quiz question — mixed quiz\n/physics — Physics\n/chemistry — Chemistry\n/maths — Mathematics\n/topics — list verified topics\n/topic physics rotational-motion — topic-wise quiz\n/stop — stop your quiz"
-    });
-  } else if (text === "start quiz question" || text === "/quiz") {
+  if (text === "/start") {
+    await showMainMenu(env, chatId, "Welcome to JEE Main PYQ Quiz Bot!\\nChoose a section using the menu button beside the message box.");
+  } else if (text === "/help" || text === "🆘 help") {
+    await showMainMenu(env, chatId, "JEE Main Quiz Bot\\n\\n🎯 Mixed Quiz: random questions from all subjects\\n📚 Subjects: choose Physics, Chemistry or Maths\\n📖 Chapter Quiz: start a topic-wise quiz\\n📊 Available Topics: see chapters currently in the verified bank\\n🛑 Stop Quiz: end your current quiz");
+  } else if (text === "📚 subjects") {
+    await showSubjects(env, chatId);
+  } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
     await startQuiz(env, chatId, null);
-  } else if (text === "/topics") {
+  } else if (text === "📊 available topics" || text === "📖 chapter quiz" || text === "/topics") {
     const available = [...new Map(questions.filter(validQuestion).map(q => {
       const subject = q.subject.toLowerCase();
       const topic = q.topic || q.chapter;
       return [`${subject}:${normalizeTopic(topic)}`, { subject, topic }];
     })).values()];
     const listing = available.length
-      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\n")
+      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\\n")
       : "No verified topics have been added yet.";
-    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\n${listing}` });
+    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\\n${listing}`, reply_markup: MAIN_MENU });
+  } else if (text === "⚡ physics" || text === "/physics") {
+    await startQuiz(env, chatId, "physics");
+  } else if (text === "🧪 chemistry" || text === "/chemistry") {
+    await startQuiz(env, chatId, "chemistry");
+  } else if (text === "📐 mathematics" || text === "/maths") {
+    await startQuiz(env, chatId, "maths");
+  } else if (text === "🛑 stop quiz" || text === "/stop") {
+    await env.QUIZ_STATE.delete(`quiz:${chatId}`);
+    await showMainMenu(env, chatId, "Quiz stopped. Choose another section below.");
   } else if (text.startsWith("/topic ")) {
     const parts = text.slice(7).trim().split(/\s+/);
     const subject = parts.shift();
@@ -190,6 +230,11 @@ async function handleMessage(env, message) {
 async function handleCallback(env, callback) {
   const chatId = callback.message.chat.id;
   const [action, indexText, choiceText] = String(callback.data || "").split(":");
+  if (action === "subject") {
+    await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+    if (indexText === "mixed") return startQuiz(env, chatId, null);
+    return startQuiz(env, chatId, indexText);
+  }
   if (action !== "a") return;
 
   const index = Number(indexText);
