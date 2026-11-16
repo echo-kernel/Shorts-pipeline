@@ -448,8 +448,9 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     if (!chosen.length) {
       await telegram(env, "sendMessage", {
         chat_id: chatId,
-        text: "No verified PYQs match this selection yet. Choose 🤖 AI Quiz to generate new practice questions. The stored PYQ bank currently has only " + bank.length + " verified entries."
+        text: "No verified PYQs match this selection yet. The current bank has " + bank.length + " verified entries. Please choose another subject/chapter/year or use 🤖 AI Quiz."
       });
+      await showMainMenu(env, chatId, "Choose another section to continue.");
       return;
     }
   }
@@ -460,26 +461,9 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     durationSeconds: settings.timed === false ? null : (settings.durationSeconds || chosen.length * 144),
     messageId: null
   };
-  // Remove setup prompts and old bot messages so only the active paper remains.
-  const messageKey = "botmsgs:" + chatId;
-  const oldMessageIds = await env.QUIZ_STATE.get(messageKey, "json") || [];
-  for (const messageId of oldMessageIds) {
-    try {
-      await telegram(env, "deleteMessage", { chat_id: chatId, message_id: messageId });
-    } catch (e) {
-      // Older messages may already be deleted or outside Telegram's delete window.
-    }
-  }
-  await env.QUIZ_STATE.delete(messageKey);
-
-  // Telegram only hides a reply keyboard after receiving this service message.
-  // Delete the service message immediately so it does not clutter the paper.
-  const hidden = await telegram(env, "sendMessage", {
-    chat_id: chatId, text: " ", reply_markup: { remove_keyboard: true }
-  });
-  try {
-    await telegram(env, "deleteMessage", { chat_id: chatId, message_id: hidden.result.message_id });
-  } catch (e) {}
+  // Keep the main menu and setup sections available while the paper is active.
+  // Do not bulk-delete bot messages: the old tracker included the persistent
+  // reply-keyboard menu, which made the whole menu disappear when a test began.
 
   await saveState(env, chatId, state);
   state.messageId = await renderQuestion(env, chatId, state);
