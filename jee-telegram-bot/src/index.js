@@ -163,11 +163,11 @@ async function handleMessage(env, message) {
       return [`${subject}:${normalizeTopic(topic)}`, { subject, topic }];
     })).values()];
     const listing = available.length
-      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\\n")
+      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\n")
       : "No verified topics have been added yet.";
-    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\\n${listing}` });
+    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\n\${listing}` });
   } else if (text.startsWith("/topic ")) {
-    const parts = text.slice(7).trim().split(/\\s+/);
+    const parts = text.slice(7).trim().split(/\s+/);
     const subject = parts.shift();
     const topic = parts.join(" ");
     if (!["physics", "chemistry", "maths"].includes(subject) || !topic) {
