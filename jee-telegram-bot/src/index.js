@@ -436,7 +436,14 @@ async function renderQuestion(env, chatId, state, messageId) {
     [{ text: marked ? "★ Unmark" : "☆ Mark review", callback_data: "nav:mark" }, { text: "📋 Submit paper", callback_data: "nav:submit" }],
     ...(isNumeric ? [] : [[{ text: "🔎 Second-opinion check", callback_data: "verify:current" }]])
   ];
-  const palette = state.questions.map((_, i) => {
+  const palettePageSize = 20;
+  const palettePageCount = Math.ceil(state.questions.length / palettePageSize);
+  const palettePage = Math.min(palettePageCount - 1, Math.max(0,
+    Number.isInteger(state.palettePage) ? state.palettePage : Math.floor(state.index / palettePageSize)));
+  state.palettePage = palettePage;
+  const paletteStart = palettePage * palettePageSize;
+  const palette = state.questions.slice(paletteStart, paletteStart + palettePageSize).map((_, offset) => {
+    const i = paletteStart + offset;
     let icon;
     if (review) {
       const a = state.answers[i];
@@ -446,6 +453,13 @@ async function renderQuestion(env, chatId, state, messageId) {
   });
   const paletteRows = [];
   for (let i = 0; i < palette.length; i += 5) paletteRows.push(palette.slice(i, i + 5));
+  if (palettePageCount > 1) {
+    paletteRows.push([
+      ...(palettePage > 0 ? [{ text: "⬅ Q" + (paletteStart - palettePageSize + 1) + "–" + paletteStart, callback_data: "palette:page:" + (palettePage - 1) }] : []),
+      { text: "Questions " + (paletteStart + 1) + "–" + Math.min(state.questions.length, paletteStart + palettePageSize), callback_data: "palette:stay" },
+      ...(palettePage < palettePageCount - 1 ? [{ text: "Q" + (paletteStart + palettePageSize + 1) + "–" + Math.min(state.questions.length, paletteStart + 2 * palettePageSize) + " ➡", callback_data: "palette:page:" + (palettePage + 1) }] : [])
+    ]);
+  }
   const summary = review && state.summary
     ? "<b>RESULT:</b> " + state.summary.score + "/" + state.questions.length + "  |  🟩 " + state.summary.correct + "  |  🟥 " + state.summary.wrong + "  |  ⬜ " + state.summary.unanswered +
       "\n<b>Accuracy:</b> " + state.summary.accuracy + "%  •  <b>Time:</b> " + state.summary.time + "\n\n" : "";
@@ -492,7 +506,15 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     const bank = questions.filter(validQuestion);
     if (settings.fullPaperKey) {
       const [year, shift] = settings.fullPaperKey.split("|");
-      chosen = shuffled(bank.filter(q => String(q.year) === year && String(q.shift) === shift));
+      chosen = bank.filter(q => String(q.year) === year && String(q.shift) === shift)
+        .sort((a, b) => {
+          const subjectOrder = { maths: 0, physics: 1, chemistry: 2 };
+          const subjectDiff = (subjectOrder[a.subject] ?? 9) - (subjectOrder[b.subject] ?? 9);
+          if (subjectDiff) return subjectDiff;
+          const numberA = Number(String(a.id || "").match(/-q(\\d+)$/)?.[1] || 0);
+          const numberB = Number(String(b.id || "").match(/-q(\\d+)$/)?.[1] || 0);
+          return numberA - numberB;
+        });
     } else {
       const wantedTopic = normalizeTopic(settings.topic);
       chosen = shuffled(bank.filter(q => {
@@ -621,6 +643,7 @@ async function handleMessage(env, message) {
   const raw = (message.text || "").trim();
   const text = raw.toLowerCase().replace(/\s+/g, " ");
   if (text === "/start") {
+    await configureTelegramMenu(env, chatId);
     await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
     return;
   }
@@ -659,17 +682,14 @@ async function handleMessage(env, message) {
   }
   const activeQuiz = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   const activeQuestion = activeQuiz?.questions?.[activeQuiz.index];
-  if (activeQuestion?.question_type === "numeric" && !activeQuiz.reviewMode) {
+  if (activeQuestion?.question_type === "numeric" && !activeQuiz.reviewMode &&
+      /^[-+]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[-+]?\\d+)?$/i.test(raw.replace(/,/g, ""))) {
     const numericValue = Number(raw.replace(/,/g, ""));
-    if (!raw || !Number.isFinite(numericValue)) {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "This is a numerical-answer question. Please send only the number (for example: 12 or 12.5)." });
-    } else {
-      activeQuiz.answers = activeQuiz.answers || {};
-      activeQuiz.answers[activeQuiz.index] = numericValue;
-      await saveState(env, chatId, activeQuiz);
-      activeQuiz.messageId = await renderQuestion(env, chatId, activeQuiz, activeQuiz.messageId);
-      await saveState(env, chatId, activeQuiz);
-    }
+    activeQuiz.answers = activeQuiz.answers || {};
+    activeQuiz.answers[activeQuiz.index] = numericValue;
+    await saveState(env, chatId, activeQuiz);
+    activeQuiz.messageId = await renderQuestion(env, chatId, activeQuiz, activeQuiz.messageId);
+    await saveState(env, chatId, activeQuiz);
     return;
   }
   const forceAi = Boolean(await env.QUIZ_STATE.get("ai-prompt:" + chatId));
@@ -787,6 +807,17 @@ async function handleCallback(env, callback) {
   if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
   const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
+  if (parts[0] === "palette") {
+    if (parts[1] === "stay") return;
+    const page = Number(parts[2]);
+    if (Number.isInteger(page)) {
+      state.palettePage = Math.max(0, Math.min(Math.ceil(state.questions.length / 20) - 1, page));
+      await saveState(env, chatId, state);
+      state.messageId = await renderQuestion(env, chatId, state, callback.message.message_id);
+      await saveState(env, chatId, state);
+    }
+    return;
+  }
   if (state.reviewMode) {
     if (parts[0] === "review" && parts[1] === "finish") {
       await env.QUIZ_STATE.delete("quiz:" + chatId);
@@ -801,6 +832,7 @@ async function handleCallback(env, callback) {
         const target = Number(action.slice(1));
         if (Number.isInteger(target) && target >= 0 && target < state.questions.length) state.index = target;
       }
+      state.palettePage = Math.floor(state.index / 20);
       await saveState(env, chatId, state);
       state.messageId = await renderQuestion(env, chatId, state, callback.message.message_id);
       await saveState(env, chatId, state);
@@ -838,6 +870,7 @@ async function handleCallback(env, callback) {
       const target = Number(action.slice(1));
       if (Number.isInteger(target) && target >= 0 && target < state.questions.length) state.index = target;
     }
+    state.palettePage = Math.floor(state.index / 20);
     if (!Array.isArray(state.visited)) state.visited = [0];
     if (!state.visited.includes(state.index)) state.visited.push(state.index);
   } else if (parts[0] === "confirm-submit") {
