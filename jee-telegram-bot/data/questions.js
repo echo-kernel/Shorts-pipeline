@@ -86,5 +86,34 @@ const questions = [
     answer: 3,
     explanation: "Rationalising gives one half of ∫₀¹[√(3+x)−√(1+x)]dx. Evaluating, the integral is 3−(2√2)/3−√3. Thus a=3, b=−2/3, c=−1 and 2a+3b−4c=8."
   }
+
+  ,
+  {
+    id: "2024-jan31-shift1-physics-q11",
+    verified: true,
+    source_url: "https://jeeneetai.com/pyq/jee-main-2024-31-jan-shift-1",
+    year: "2024",
+    shift: "31 January · Shift 1",
+    subject: "physics",
+    topic: "Kinetic Theory of Gases",
+    question: "The parameter that remains the same for molecules of all gases at a given temperature is:",
+    options: ["Kinetic energy", "Momentum", "Mass", "Speed"],
+    answer: 0,
+    explanation: "At a fixed temperature, the average translational kinetic energy per molecule is (3/2)kT, independent of the gas identity."
+  },
+  {
+    id: "2024-jan31-shift1-chemistry-q31",
+    verified: true,
+    source_url: "https://jeeneetai.com/pyq/jee-main-2024-31-jan-shift-1",
+    year: "2024",
+    shift: "31 January · Shift 1",
+    subject: "chemistry",
+    topic: "Classification of Elements and Periodicity in Properties",
+    question: "Arrange the electron gain enthalpies of Ar, Br, F and S in the correct order.",
+    options: ["F > Br > S > Ar", "Ar > S > Br > F", "Ar > S > F > Br", "S > F > Br > Ar"],
+    answer: 1,
+    explanation: "The correct order as keyed for this question is Ar > S > Br > F."
+  }
+
 ];
 export default questions;
