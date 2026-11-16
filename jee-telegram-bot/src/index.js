@@ -6,8 +6,8 @@ const MAIN_MENU = {
     [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
     [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
     [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
+    [{ text: "📊 Available Topics" }, { text: "📊 Bank Coverage" }],
     [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
-    [{ text: "📊 Bank Coverage" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
