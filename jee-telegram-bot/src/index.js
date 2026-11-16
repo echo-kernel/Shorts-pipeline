@@ -258,7 +258,7 @@ function interpretRequest(rawText, forceAi) {
     count,
     difficulty,
     questionType: "mcq",
-    year: (lower.match(/\\b(20(?:19|20|21|22|23|24|25|26))\\b/) || [])[1] || null
+    year: (lower.match(/\b(20(?:19|20|21|22|23|24|25|26))\b/) || [])[1] || null
   };
 }
 
