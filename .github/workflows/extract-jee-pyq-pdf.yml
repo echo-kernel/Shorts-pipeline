@@ -49,8 +49,8 @@ jobs:
           SHIFT: ${{ inputs.shift }}
           SOURCE_LABEL: ${{ inputs.source_label }}
         run: |
-          python jee-telegram-bot/tools/extract_pdf_questions.py \\
-            --url "$PDF_URL" --year "$YEAR" --date "$EXAM_DATE" \\
+          python jee-telegram-bot/tools/extract_pdf_questions.py \
+            --url "$PDF_URL" --year "$YEAR" --date "$EXAM_DATE" \
             --shift "$SHIFT" --source-label "$SOURCE_LABEL"
       - name: Upload extraction results
         uses: actions/upload-artifact@v4
