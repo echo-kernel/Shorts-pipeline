@@ -180,9 +180,9 @@ async function handleMessage(env, message) {
   const text = (message.text || "").trim().toLowerCase().replace(/\s+/g, " ");
 
   if (text === "/start") {
-    await showMainMenu(env, chatId, "Welcome to JEE Main PYQ Quiz Bot!\\nChoose a section using the menu button beside the message box.");
+    await showMainMenu(env, chatId, "Welcome to JEE Main PYQ Quiz Bot!\nChoose a section using the menu button beside the message box.");
   } else if (text === "/help" || text === "🆘 help") {
-    await showMainMenu(env, chatId, "JEE Main Quiz Bot\\n\\n🎯 Mixed Quiz: random questions from all subjects\\n📚 Subjects: choose Physics, Chemistry or Maths\\n📖 Chapter Quiz: start a topic-wise quiz\\n📊 Available Topics: see chapters currently in the verified bank\\n🛑 Stop Quiz: end your current quiz");
+    await showMainMenu(env, chatId, "JEE Main Quiz Bot\n\n🎯 Mixed Quiz: random questions from all subjects\n📚 Subjects: choose Physics, Chemistry or Maths\n📖 Chapter Quiz: start a topic-wise quiz\n📊 Available Topics: see chapters currently in the verified bank\n🛑 Stop Quiz: end your current quiz");
   } else if (text === "📚 subjects") {
     await showSubjects(env, chatId);
   } else if (text === "🎯 mixed quiz" || text === "start quiz question" || text === "/quiz") {
@@ -194,9 +194,9 @@ async function handleMessage(env, message) {
       return [`${subject}:${normalizeTopic(topic)}`, { subject, topic }];
     })).values()];
     const listing = available.length
-      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\\n")
+      ? available.map(x => `/topic ${x.subject} ${normalizeTopic(x.topic)} — ${x.topic}`).join("\n")
       : "No verified topics have been added yet.";
-    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\\n${listing}`, reply_markup: MAIN_MENU });
+    await telegram(env, "sendMessage", { chat_id: chatId, text: `Verified topics currently in the bank:\n${listing}`, reply_markup: MAIN_MENU });
   } else if (text === "⚡ physics" || text === "/physics") {
     await startQuiz(env, chatId, "physics");
   } else if (text === "🧪 chemistry" || text === "/chemistry") {
