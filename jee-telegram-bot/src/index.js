@@ -96,6 +96,17 @@ async function askDuration(env, chatId) {
     ]}
   });
 }
+async function showFullPaperInstructions(env, chatId, pending) {
+  await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify(pending), { expirationTtl: 600 });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "📋 JEE MAIN FULL PAPER — INSTRUCTIONS\\n\\n1. This is an exam-style paper. Try to complete it in one sitting.\\n2. Select one option for each MCQ. Your selected answer is saved automatically.\\n3. Use Previous / Next to move between questions. Skip leaves a question unanswered.\\n4. Use the question palette to jump to any question.\\n5. Palette: ⬜ not visited, 🟥 visited but unanswered, 🟩 answered, 🟨 marked for review.\\n6. Use Mark for Review when you want to revisit a question.\\n7. Submit the paper when finished. You will be asked to confirm. Answers and solutions are shown only after submission.\\n8. The timer runs from the moment the paper starts and the paper auto-submits when time ends.\\n\\nStart the paper now?",
+    reply_markup: { inline_keyboard: [
+      [{ text: "▶️ Start full paper", callback_data: "fullpaper-start" }],
+      [{ text: "↩ Cancel", callback_data: "fullpaper-cancel" }]
+    ]}
+  });
+}
 
 async function showFullPaperOptions(env, chatId) {
   const bank = questions.filter(validQuestion);
@@ -198,33 +209,36 @@ async function callGemini(env, prompt, maxTokens) {
     throw new Error("Gemini returned incomplete/invalid JSON (" + reason + "). Try fewer questions.");
   }
 }
-async function interpretRequest(env, rawText, forceAi) {
-  const prompt = [
-    "Interpret the user's request for a JEE Main practice test.",
-    "Return only JSON with keys action, mode, subject, topic, count, difficulty, questionType.",
-    'mode must be "pyq" for real past-year questions, or "ai" for newly AI-created practice questions.',
-    "Use mode ai if the user says create, generate, make, custom, new questions, according to me, or asks for an AI quiz. Otherwise use pyq.",
-    'subject must be physics, chemistry, maths, or mixed. topic is a concise chapter name or empty string.',
-    "count must be an integer from 1 to 30. Default 10. difficulty is easy, moderate, difficult, or mixed. Default moderate.",
-    'questionType can be mcq, numerical-style-mcq, or mixed. Default mcq. This bot currently supports four-option MCQs only.',
-    "Understand typos, informal English and Hinglish. Do not invent a topic. If not a JEE quiz use action help.",
-    "User request: " + rawText,
-    "Force AI-created mode: " + (forceAi ? "yes" : "no")
-  ].join("\n");
-  const parsed = await callGemini(env, prompt, 500);
-  if (parsed.action !== "quiz" ||
-      !["physics", "chemistry", "maths", "mixed"].includes(String(parsed.subject).toLowerCase())) {
-    return { action: "help" };
+function interpretRequest(rawText, forceAi) {
+  const raw = String(rawText || "").trim();
+  const lower = raw.toLowerCase();
+  const explicitPyq = /\\b(pyq|previous[- ]year|past[- ]year|previous year question)\\b/.test(lower);
+  const aiIntent = forceAi || (!explicitPyq && /\\b(ai quiz|create|generate|make me|make a|custom|new questions|practice questions)\\b/.test(lower));
+  let subject = "mixed";
+  if (/\\b(physics|phy)\\b/.test(lower)) subject = "physics";
+  else if (/\\b(chemistry|chem)\\b/.test(lower)) subject = "chemistry";
+  else if (/\\b(math|maths|mathematics)\\b/.test(lower)) subject = "maths";
+  const countMatch = lower.match(/\\b(\\d{1,2})\\s*(?:questions?|q(?:uestions?)?)?\\b/);
+  const count = Math.max(1, Math.min(30, countMatch ? Number(countMatch[1]) : 10));
+  let topic = "";
+  const topicMatch = raw.match(/\\b(?:from|on|in|chapter(?:\\s+of)?)\\s+(.+?)(?=\\s+(?:with|at|level|difficulty|and)\\b|[,;]|$)/i);
+  if (topicMatch) {
+    topic = topicMatch[1].replace(/\\b(j ee|jee main|pyqs?|questions?)\\b/ig, "").trim();
   }
+  let difficulty = "moderate";
+  if (/\\b(easy|basic)\\b/.test(lower)) difficulty = "easy";
+  else if (/\\b(difficult|hard|tough)\\b/.test(lower)) difficulty = "difficult";
+  else if (/\\bmixed difficulty\\b/.test(lower)) difficulty = "mixed";
+  const looksLikeQuiz = /\\b(jee|quiz|test|paper|questions?|pyq|practice)\\b/.test(lower) || forceAi;
+  if (!looksLikeQuiz) return { action: "help" };
   return {
     action: "quiz",
-    mode: forceAi ? "ai" : (parsed.mode === "ai" ? "ai" : "pyq"),
-    subject: String(parsed.subject).toLowerCase(),
-    topic: String(parsed.topic || "").trim(),
-    count: Math.max(1, Math.min(30, Number.parseInt(parsed.count, 10) || 10)),
-    difficulty: ["easy", "moderate", "difficult", "mixed"].includes(String(parsed.difficulty).toLowerCase())
-      ? String(parsed.difficulty).toLowerCase() : "moderate",
-    questionType: String(parsed.questionType || "mcq")
+    mode: aiIntent ? "ai" : "pyq",
+    subject,
+    topic,
+    count,
+    difficulty,
+    questionType: "mcq"
   };
 }
 
@@ -325,7 +339,9 @@ async function renderQuestion(env, chatId, state, messageId) {
     ]
   ];
   const palette = state.questions.map((_, i) => {
-    const icon = state.marked.includes(i) ? "🟨" : (state.answers[i] !== undefined ? "🟩" : "⬜");
+    const icon = state.marked.includes(i) ? "🟨" :
+      (state.answers[i] !== undefined ? "🟩" :
+      (state.visited?.includes(i) ? "🟥" : "⬜"));
     return { text: icon + (i + 1), callback_data: "nav:q" + i };
   });
   const paletteRows = [];
@@ -390,7 +406,7 @@ async function startQuiz(env, chatId, settings, originalRequest) {
     }
   }
   const state = {
-    mode: settings.mode, questions: chosen, index: 0, answers: {}, marked: [],
+    mode: settings.mode, questions: chosen, index: 0, answers: {}, marked: [], visited: [0],
     startedAt: Date.now(),
     timed: settings.timed !== false,
     durationSeconds: settings.timed === false ? null : (settings.durationSeconds || chosen.length * 144),
@@ -499,7 +515,7 @@ async function handleMessage(env, message) {
     return;
   }
   try {
-    const settings = await interpretRequest(env, raw, forceAi);
+    const settings = interpretRequest(raw, forceAi);
     if (settings.action !== "quiz") {
       await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't identify the test settings. Tell me the subject, chapter, number of questions and difficulty, or tap 🤖 AI Quiz." });
       return;
@@ -546,6 +562,7 @@ async function handleCallback(env, callback) {
       await env.QUIZ_STATE.put("pending:" + chatId, JSON.stringify(pending), { expirationTtl: 600 });
       return askDuration(env, chatId);
     }
+    if (pending.fullPaperKey) return showFullPaperInstructions(env, chatId, pending);
     await env.QUIZ_STATE.delete("pending:" + chatId);
     return startQuiz(env, chatId, pending, pending.originalRequest || "PYQ menu selection");
   }
@@ -554,6 +571,7 @@ async function handleCallback(env, callback) {
     if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please start the quiz setup again." });
     pending.timed = true;
     pending.durationSeconds = Number(parts[1]) * 60;
+    if (pending.fullPaperKey) return showFullPaperInstructions(env, chatId, pending);
     await env.QUIZ_STATE.delete("pending:" + chatId);
     return startQuiz(env, chatId, pending, pending.originalRequest || "PYQ menu selection");
   }
@@ -563,6 +581,16 @@ async function handleCallback(env, callback) {
     const selected = questions.filter(validQuestion).filter(q => String(q.year) === year && String(q.shift) === shift);
     if (selected.length < 75) return telegram(env, "sendMessage", { chat_id: chatId, text: "This shift is not yet a complete 75-question paper." });
     return askTimingMode(env, chatId, { mode: "pyq", subject: "mixed", topic: null, count: selected.length, fullPaperKey: key, difficulty: "mixed" });
+  }
+  if (parts[0] === "fullpaper-start") {
+    const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
+    if (!pending?.fullPaperKey) return telegram(env, "sendMessage", { chat_id: chatId, text: "Paper setup expired. Please choose the full paper again." });
+    await env.QUIZ_STATE.delete("pending:" + chatId);
+    return startQuiz(env, chatId, pending, "Full JEE Main PYQ paper");
+  }
+  if (parts[0] === "fullpaper-cancel") {
+    await env.QUIZ_STATE.delete("pending:" + chatId);
+    return showMainMenu(env, chatId, "Full paper cancelled. Choose another mode whenever you're ready.");
   }
   if (parts[0] === "subject") {
     return askQuestionCount(env, chatId, parts[1] === "mixed" ? "mixed" : parts[1], null);
@@ -596,6 +624,8 @@ async function handleCallback(env, callback) {
       const target = Number(action.slice(1));
       if (Number.isInteger(target) && target >= 0 && target < state.questions.length) state.index = target;
     }
+    if (!Array.isArray(state.visited)) state.visited = [0];
+    if (!state.visited.includes(state.index)) state.visited.push(state.index);
   } else if (parts[0] === "confirm-submit") {
     return submitQuiz(env, chatId, state);
   } else if (parts[0] === "cancel-submit") {
