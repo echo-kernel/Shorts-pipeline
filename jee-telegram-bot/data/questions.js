@@ -341,5 +341,88 @@ const questions = [
     answer: 0,
     explanation: "Integrating gives p = p₀e⁻ᵃᵛ. Since T = pv/R for one mole, temperature is maximized when v = 1/a, giving Tₘₐₓ = p₀/(aeR)."
   }
+
+  // First imported batch: JEE Main 2024, 27 January, Shift 2.
+  // Transcribed from the shift paper; answers independently checked against the
+  // stated physics principles and the published NTA final-key reference.
+  {
+    id: "2024-jan27-shift2-physics-q1",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Alternating Current",
+    question: "The primary side of a transformer is connected to a 230 V, 50 Hz supply. The turns ratio of primary to secondary is 10:1. A 46 Ω load is connected to the secondary. Find the power consumed by the load.",
+    options: ["11.5 W", "12.5 W", "10.0 W", "12.0 W"],
+    answer: 0,
+    explanation: "For an ideal transformer, Vₛ = 230/10 = 23 V. The load power is P = Vₛ²/R = 23²/46 = 11.5 W."
+  },
+  {
+    id: "2024-jan27-shift2-physics-q2",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Nuclear Physics",
+    question: "The atomic masses of ₆C¹² and ₆C¹³ are 12.000000 u and 13.003354 u respectively. If the neutron mass is 1.008665 u, find the energy required to remove a neutron from ₆C¹³.",
+    options: ["62.5 MeV", "6.25 MeV", "4.95 MeV", "49.5 MeV"],
+    answer: 2,
+    explanation: "The neutron separation energy is [12.000000 + 1.008665 − 13.003354]u × 931.5 MeV/u = 0.005311 × 931.5 ≈ 4.95 MeV."
+  },
+  {
+    id: "2024-jan27-shift2-physics-q4",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Moving Charges and Magnetism",
+    question: "A current of 200 μA deflects the coil of a moving-coil galvanometer through 60°. What current is required to produce a deflection of π/10 radian?",
+    options: ["120 μA", "180 μA", "30 μA", "60 μA"],
+    answer: 3,
+    explanation: "For a moving-coil galvanometer, deflection is proportional to current. π/10 rad = 18°, so I = 200 × 18/60 = 60 μA."
+  },
+  {
+    id: "2024-jan27-shift2-physics-q5",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Current Electricity",
+    question: "A wire of length L and radius r has specific resistance S₁. If its length is doubled, what will its specific resistance be?",
+    options: ["S₁/4", "2S₁", "S₁/2", "S₁"],
+    answer: 3,
+    explanation: "Specific resistance (resistivity) is a material property at fixed temperature. Changing the wire's length does not change its resistivity."
+  },
+  {
+    id: "2024-jan27-shift2-physics-q6",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Dual Nature of Radiation and Matter",
+    question: "The work function of a metal is 6.63 eV. Find its threshold frequency.",
+    options: ["16 × 10¹⁵ Hz", "16 × 10¹² Hz", "1.6 × 10¹⁵ Hz", "1.6 × 10¹² Hz"],
+    answer: 2,
+    explanation: "Threshold frequency ν₀ = φ/h. Converting 6.63 eV to joules gives ν₀ = (6.63 × 1.6 × 10⁻¹⁹)/(6.63 × 10⁻³⁴) = 1.6 × 10¹⁵ Hz."
+  },
+  {
+    id: "2024-jan27-shift2-physics-q7",
+    verified: true,
+    source_url: "https://prepwiser.in/pyq-pdfs/jee-main/2024/27-jan-shift-2/PrepWiser_JEE-Main-2024-27-Jan-Shift-2_Question-Paper.pdf",
+    year: "2024",
+    shift: "27 January · Shift 2",
+    subject: "physics",
+    topic: "Electromagnetic Waves",
+    question: "An electromagnetic wave of intensity 6 × 10⁸ W/m² falls normally on an object in a medium of refractive index 3 and is absorbed completely. Find the radiation pressure. Take c = 3 × 10⁸ m/s.",
+    options: ["6 N/m²", "36 N/m²", "18 N/m²", "2 N/m²"],
+    answer: 0,
+    explanation: "For complete absorption in a medium, radiation pressure is nI/c. Thus p = 3 × (6 × 10⁸)/(3 × 10⁸) = 6 N/m²."
+  }
+
 ];
 export default questions;
