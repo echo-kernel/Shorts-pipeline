@@ -671,7 +671,8 @@ async function understandNaturalRequest(env, raw) {
     reply: String(parsed.reply || "").trim().slice(0,700)
   };
 }
-\nasync function handleMessage(env, message) {
+
+async function handleMessage(env, message) {
   const chatId = message.chat.id;
   const raw = (message.text || "").trim();
   const text = raw.toLowerCase().replace(/\s+/g, " ");
