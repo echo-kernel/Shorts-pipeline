@@ -23,41 +23,71 @@ sys.path.insert(0, str(ROOT))
 
 # 2. Load private credentials
 def load_secret(name):
-    # Prefer Kaggle's encrypted Secrets feature.
+    # First try Kaggle's encrypted Secrets feature.
     try:
         from kaggle_secrets import UserSecretsClient
         value = UserSecretsClient().get_secret(name)
         if value:
-            return value.strip()
+            return str(value).strip()
     except Exception as exc:
         print(f"Kaggle Secrets lookup unavailable for {name}: {type(exc).__name__}")
 
-    # Fallback: accept plain UTF-8 files or a UTF-8 secrets.json file.
     input_dir = Path("/kaggle/input")
-    if input_dir.exists():
-        candidates = list(input_dir.rglob(name))
-        for path in candidates:
-            if not path.is_file():
+    if not input_dir.exists():
+        print("No Kaggle input dataset is mounted.")
+        return ""
+
+    # Support individual secret files, .env files, JSON files and key=value files.
+    text_files = []
+    for path in input_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.stat().st_size > 1024 * 1024:
+            continue
+        text_files.append(path)
+
+    # Prefer a file whose name exactly matches the requested secret.
+    for path in text_files:
+        if path.name != name:
+            continue
+        try:
+            value = path.read_bytes().decode("utf-8-sig").strip()
+            if value and "=" not in value.splitlines()[0]:
+                print(f"Loaded {name} from individual secret file.")
+                return value
+        except (UnicodeDecodeError, OSError):
+            print(f"Skipped binary/non-UTF-8 file for {name}: {path.name}")
+
+    # Parse structured or key=value text files without printing secret values.
+    for path in text_files:
+        if path.suffix.lower() not in {".json", ".env", ".txt", ".cfg", ".ini"} and path.name not in {".env", "secrets"}:
+            continue
+        try:
+            raw = path.read_bytes().decode("utf-8-sig")
+        except (UnicodeDecodeError, OSError):
+            continue
+
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and data.get(name):
+                print(f"Loaded {name} from structured secrets file: {path.name}")
+                return str(data[name]).strip()
+        except json.JSONDecodeError:
+            pass
+
+        for line in raw.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
                 continue
-            try:
-                value = path.read_bytes().decode("utf-8-sig").strip()
+            key, value = line.split("=", 1)
+            if key.strip().removeprefix("export ").strip() == name:
+                value = value.strip().strip('"').strip("'")
                 if value:
-                    print(f"Loaded {name} from readable file: {path}")
+                    print(f"Loaded {name} from key=value file: {path.name}")
                     return value
-            except UnicodeDecodeError:
-                print(f"Skipping non-UTF-8 credential candidate: {path}")
 
-        for path in input_dir.rglob("*.json"):
-            if not path.is_file():
-                continue
-            try:
-                data = json.loads(path.read_text(encoding="utf-8-sig"))
-                if isinstance(data, dict) and data.get(name):
-                    print(f"Loaded {name} from JSON file: {path}")
-                    return str(data[name]).strip()
-            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
-                continue
-
+    available = sorted({p.name for p in text_files})
+    print("Credential files found (names only):", available[:30])
     return ""
 
 for name in [
