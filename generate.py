@@ -469,7 +469,7 @@ def create_clips(scenes):
         generate_video(
             prompt=scene,
             output_path=output,
-            duration=5,
+            duration=10,
             on_retry=retry_callback
         )
 
