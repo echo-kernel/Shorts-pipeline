@@ -707,7 +707,7 @@ async function askVideoTopic(env, chatId) {
   await env.QUIZ_STATE.put("video-pending:" + chatId, "topic", { expirationTtl: 900 });
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "🎬 AI VIDEO GENERATOR\\n\\nSend the topic or story for your video.\\n\\nExample: The untold story of U Tirot Sing and the Khasi resistance in 1829.\\n\\nTarget: realistic cinematic visuals, vertical 9:16, Hindi narration and subtitles.",
+    text: "🎬 AI VIDEO GENERATOR\n\nSend the topic or story for your video.\n\nExample: The untold story of U Tirot Sing and the Khasi resistance in 1829.\n\nTarget: realistic cinematic visuals, vertical 9:16, Hindi narration and subtitles.",
     reply_markup: { inline_keyboard: [[{ text: "✖ Cancel", callback_data: "video:cancel" }]] }
   });
 }
@@ -740,7 +740,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
   }
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "🚀 Your cinematic AI video job has been queued!\\n\\nTopic: " + topic.slice(0, 400) + "\\nQuality: photorealistic cinematic, vertical 9:16, Hindi narration and subtitles.\\n\\nI'll send progress and the finished MP4 here when the GPU workflow runs."
+    text: "🚀 Your cinematic AI video job has been queued!\n\nTopic: " + topic.slice(0, 400) + "\nQuality: photorealistic cinematic, vertical 9:16, Hindi narration and subtitles.\n\nI'll send progress and the finished MP4 here when the GPU workflow runs."
   });
 }
 
