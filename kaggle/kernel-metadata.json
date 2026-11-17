@@ -1,7 +1,7 @@
 
 {
   "id": "apuravjadhav/shorts-pipeline-wan",
-  "title": "Shorts Pipeline Wan GPU Runner",
+  "title": "Shorts Pipeline Wan",
   "code_file": "kaggle_runner.py",
   "language": "python",
   "kernel_type": "script",
