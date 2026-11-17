@@ -16,8 +16,10 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out the full-featured bot branch
         uses: actions/checkout@v4
+        with:
+          ref: jee-telegram-quiz
 
       - name: Validate required secrets
         env:
@@ -75,11 +77,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.telegram_bot_token }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           WEBHOOK_SECRET="$(openssl rand -hex 32)"
           printf '%s' "$TELEGRAM_TOKEN" | npx wrangler secret put TELEGRAM_TOKEN --config jee-telegram-bot/wrangler.toml
           printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config jee-telegram-bot/wrangler.toml
+          if [ -n "$VIDEO_GITHUB_TOKEN" ]; then
+            printf '%s' "$VIDEO_GITHUB_TOKEN" | npx wrangler secret put GITHUB_TOKEN --config jee-telegram-bot/wrangler.toml
+            echo "Video workflow trigger secret configured."
+          else
+            echo "VIDEO_GITHUB_TOKEN is not set; video requests will show setup instructions."
+          fi
           printf '%s' "$WEBHOOK_SECRET" | npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config jee-telegram-bot/wrangler.toml
           echo "::add-mask::$WEBHOOK_SECRET"
           echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
@@ -106,3 +115,28 @@ jobs:
             -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/setWebhook" \
             --data-urlencode "url=$WORKER_URL" \
             --data-urlencode "secret_token=$WEBHOOK_SECRET"
+
+      - name: Set Telegram command menu
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.telegram_bot_token }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/setMyCommands" \
+            -H "Content-Type: application/json" \
+            --data '{"commands":[
+              {"command":"start","description":"Open the JEE quiz bot"},
+              {"command":"quiz","description":"Start a mixed JEE PYQ quiz"},
+              {"command":"physics","description":"Start a Physics quiz"},
+              {"command":"chemistry","description":"Start a Chemistry quiz"},
+              {"command":"maths","description":"Start a Mathematics quiz"},
+              {"command":"topics","description":"Show available chapter-wise topics"},
+              {"command":"topic","description":"Start a quiz for a chapter"},
+              {"command":"stop","description":"Stop the current quiz"},
+              {"command":"years","description":"Browse PYQs by year"},
+              {"command":"fullpaper","description":"Browse complete 75-question papers"},
+              {"command":"progress","description":"Show your quiz performance"},
+              {"command":"mistakes","description":"Review recent wrong answers"},
+              {"command":"coverage","description":"Show verified PYQ bank coverage"},
+              {"command":"help","description":"Show bot instructions"}
+            ]}'
