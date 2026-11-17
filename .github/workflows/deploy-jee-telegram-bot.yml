@@ -76,11 +76,18 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.telegram_bot_token }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           WEBHOOK_SECRET="$(openssl rand -hex 32)"
           printf '%s' "$TELEGRAM_TOKEN" | npx wrangler secret put TELEGRAM_TOKEN --config jee-telegram-bot/wrangler.toml
           printf '%s' "$GEMINI_API_KEY" | npx wrangler secret put GEMINI_API_KEY --config jee-telegram-bot/wrangler.toml
+          if [ -n "$VIDEO_GITHUB_TOKEN" ]; then
+            printf '%s' "$VIDEO_GITHUB_TOKEN" | npx wrangler secret put GITHUB_TOKEN --config jee-telegram-bot/wrangler.toml
+            echo "Video workflow trigger secret configured."
+          else
+            echo "VIDEO_GITHUB_TOKEN is not set; video requests will show setup instructions."
+          fi
           printf '%s' "$WEBHOOK_SECRET" | npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config jee-telegram-bot/wrangler.toml
           echo "::add-mask::$WEBHOOK_SECRET"
           echo "WEBHOOK_SECRET=$WEBHOOK_SECRET" >> "$GITHUB_ENV"
