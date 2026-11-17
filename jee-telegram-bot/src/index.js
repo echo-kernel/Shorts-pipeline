@@ -737,7 +737,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
   if (response.status !== 204) {
     const detail = (await response.text()).slice(0, 500);
     console.error("Video workflow dispatch failed", response.status, detail);
-    throw new Error("GitHub rejected the video job (HTTP " + response.status + "). Check GITHUB_TOKEN Actions permission.");
+    throw new Error("GitHub rejected the video job (HTTP " + response.status + "): " + (detail || "No response details") + ". Check the VIDEO_GITHUB_TOKEN secret and GitHub Actions write access.");
   }
   await telegram(env, "sendMessage", {
     chat_id: chatId,
