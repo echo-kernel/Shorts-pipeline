@@ -725,6 +725,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     method: "POST",
     headers: {
       "Accept": "application/vnd.github+json",
+      "User-Agent": "JEE-Telegram-Quiz-Bot/1.0 (https://github.com/stonecrusher1india/Shorts-pipeline)",
       "Authorization": "Bearer " + env.GITHUB_TOKEN,
       "X-GitHub-Api-Version": "2022-11-28",
       "Content-Type": "application/json"
