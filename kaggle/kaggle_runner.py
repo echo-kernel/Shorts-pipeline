@@ -44,6 +44,8 @@ for name in [
     "TELEGRAM_CHAT_ID"
 ]:
     value = load_secret(name)
+    if name == "TELEGRAM_CHAT_ID" and os.getenv("VIDEO_CHAT_ID"):
+        value = os.environ["VIDEO_CHAT_ID"]
     if not value:
         raise RuntimeError("Missing credential file: " + name)
     os.environ[name] = value
