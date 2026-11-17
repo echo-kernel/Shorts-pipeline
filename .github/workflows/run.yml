@@ -69,8 +69,8 @@ jobs:
           source = path.read_text(encoding="utf-8")
           anchor = 'REPO = "https://github.com/stonecrusher1india/Shorts-pipeline.git"'
           injected = (
-              "os.environ['VIDEO_TOPIC'] = " + repr(os.getenv("VIDEO_TOPIC", "")) + "\\n"
-              "os.environ['VIDEO_CHAT_ID'] = " + repr(os.getenv("VIDEO_CHAT_ID", "")) + "\\n"
+              "os.environ['VIDEO_TOPIC'] = " + repr(os.getenv("VIDEO_TOPIC", "")) + "\n"
+              "os.environ['VIDEO_CHAT_ID'] = " + repr(os.getenv("VIDEO_CHAT_ID", "")) + "\n"
               + anchor
           )
           if anchor not in source:
