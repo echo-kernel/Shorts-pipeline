@@ -638,7 +638,40 @@ async function submitQuiz(env, chatId, state) {
   state.messageId = await renderQuestion(env, chatId, state, state.messageId);
   await saveState(env, chatId, state);
 }
-async function handleMessage(env, message) {
+
+async function understandNaturalRequest(env, raw) {
+  const prompt = [
+    "You are the natural-language intent engine for a JEE Main Telegram quiz bot.",
+    "Understand informal English, Indian English, typos, incomplete phrases and follow-up style requests.",
+    "Return JSON only with this schema:",
+    '{"action":"quiz|chat|clarify","mode":"ai|pyq","subject":"physics|chemistry|maths|mixed","topic":"","count":10,"difficulty":"easy|moderate|difficult|mixed","year":null,"reply":""}',
+    "If the user wants questions, a test, practice, a mock paper, PYQs, or asks to change quiz settings, choose action=quiz.",
+    "Use mode=pyq ONLY when they explicitly ask for previous-year questions/PYQs; otherwise use ai.",
+    "Infer subject/topic/count/difficulty/year when stated. If count is not stated use 10. If subject is not stated use mixed. Do not demand every field.",
+    "Normalize subject names: mathematics/math/maths -> maths; physical science/phy -> physics.",
+    "If user says 'make it harder/easier', 'same chapter', 'more questions' or similar and no prior context is supplied, choose sensible defaults and put any needed clarification in reply.",
+    "If it is ordinary conversation unrelated to making or changing a quiz, choose action=chat and give a short useful reply.",
+    "If genuinely impossible to know what quiz action is intended, choose action=clarify and ask only one short question.",
+    "Never claim AI-created questions are official PYQs.",
+    "User message: " + raw
+  ].join("\n");
+  const parsed = await callGemini(env, prompt, 900);
+  const subject = ["physics","chemistry","maths","mixed"].includes(String(parsed.subject).toLowerCase())
+    ? String(parsed.subject).toLowerCase() : "mixed";
+  const mode = parsed.mode === "pyq" ? "pyq" : "ai";
+  const count = Math.max(1, Math.min(30, Number.parseInt(parsed.count, 10) || 10));
+  const difficulty = ["easy","moderate","difficult","mixed"].includes(String(parsed.difficulty).toLowerCase())
+    ? String(parsed.difficulty).toLowerCase() : "moderate";
+  const action = ["quiz","chat","clarify"].includes(parsed.action) ? parsed.action : "clarify";
+  return {
+    action, mode, subject,
+    topic: String(parsed.topic || "").trim().slice(0,100),
+    count, difficulty,
+    year: /^20(?:19|20|21|22|23|24|25|26)$/.test(String(parsed.year || "")) ? String(parsed.year) : null,
+    reply: String(parsed.reply || "").trim().slice(0,700)
+  };
+}
+\nasync function handleMessage(env, message) {
   const chatId = message.chat.id;
   const raw = (message.text || "").trim();
   const text = raw.toLowerCase().replace(/\s+/g, " ");
@@ -707,10 +740,18 @@ async function handleMessage(env, message) {
     return;
   }
   try {
-    const settings = interpretRequest(raw, forceAi);
+    let settings = interpretRequest(raw, forceAi);
     if (settings.action !== "quiz") {
-      await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't identify the test settings. Tell me the subject, chapter, number of questions and difficulty, or tap 🤖 AI Quiz." });
-      return;
+      // Let Gemini understand free-form requests instead of rejecting anything
+      // that does not match the old fixed keyword patterns.
+      settings = await understandNaturalRequest(env, raw);
+      if (settings.action === "chat" || settings.action === "clarify") {
+        await telegram(env, "sendMessage", {
+          chat_id: chatId,
+          text: settings.reply || "I can create JEE practice tests or find PYQs. Tell me what you want to practise."
+        });
+        return;
+      }
     }
     if (settings.mode === "pyq" && forceAi) settings.mode = "ai";
     settings.originalRequest = raw;
