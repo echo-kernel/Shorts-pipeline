@@ -8,6 +8,7 @@ const MAIN_MENU = {
     [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
     [{ text: "📊 Available Topics" }, { text: "📊 Bank Coverage" }],
     [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
+    [{ text: "🎬 Generate AI Video" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -99,8 +100,9 @@ async function configureTelegramMenu(env, chatId) {
 async function showSections(env, chatId) {
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "📚 JEE QUIZ SECTIONS — choose one:",
+    text: "📚 JEE BOT SECTIONS — choose one:",
     reply_markup: { inline_keyboard: [
+      [{ text: "🎬 Generate AI Video", callback_data: "section:video" }],
       [{ text: "🎯 Mixed PYQ", callback_data: "section:mixed" }],
       [{ text: "📚 Subjects", callback_data: "section:subjects" }],
       [{ text: "📖 Chapter PYQ", callback_data: "section:chapters" }],
@@ -701,6 +703,47 @@ async function understandNaturalRequest(env, raw) {
   };
 }
 
+async function askVideoTopic(env, chatId) {
+  await env.QUIZ_STATE.put("video-pending:" + chatId, "topic", { expirationTtl: 900 });
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "🎬 AI VIDEO GENERATOR\\n\\nSend the topic or story for your video.\\n\\nExample: The untold story of U Tirot Sing and the Khasi resistance in 1829.\\n\\nTarget: realistic cinematic visuals, vertical 9:16, Hindi narration and subtitles.",
+    reply_markup: { inline_keyboard: [[{ text: "✖ Cancel", callback_data: "video:cancel" }]] }
+  });
+}
+
+async function dispatchVideoWorkflow(env, chatId, topic) {
+  if (!env.GITHUB_TOKEN) {
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ Video generation is not connected yet. The bot needs the GITHUB_TOKEN Worker secret with Actions: write permission. Add it in Cloudflare Worker settings, then try again."
+    });
+    return;
+  }
+  const response = await fetch("https://api.github.com/repos/stonecrusher1india/Shorts-pipeline/actions/workflows/run.yml/dispatches", {
+    method: "POST",
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "Authorization": "Bearer " + env.GITHUB_TOKEN,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ref: "jee-telegram-quiz",
+      inputs: { topic: topic.slice(0, 500), chat_id: String(chatId) }
+    })
+  });
+  if (response.status !== 204) {
+    const detail = (await response.text()).slice(0, 500);
+    console.error("Video workflow dispatch failed", response.status, detail);
+    throw new Error("GitHub rejected the video job (HTTP " + response.status + "). Check GITHUB_TOKEN Actions permission.");
+  }
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "🚀 Your cinematic AI video job has been queued!\\n\\nTopic: " + topic.slice(0, 400) + "\\nQuality: photorealistic cinematic, vertical 9:16, Hindi narration and subtitles.\\n\\nI'll send progress and the finished MP4 here when the GPU workflow runs."
+  });
+}
+
 async function handleMessage(env, message) {
   const chatId = message.chat.id;
   const raw = (message.text || "").trim();
@@ -711,6 +754,7 @@ async function handleMessage(env, message) {
     return;
   }
   if (text === "/sections") return showSections(env, chatId);
+  if (text === "/video" || text === "🎬 generate ai video") return askVideoTopic(env, chatId);
   if (text === "/subjects") return showSubjects(env, chatId);
   if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
   if (text === "/help" || text === "🆘 help") {
@@ -753,6 +797,21 @@ async function handleMessage(env, message) {
     await saveState(env, chatId, activeQuiz);
     activeQuiz.messageId = await renderQuestion(env, chatId, activeQuiz, activeQuiz.messageId);
     await saveState(env, chatId, activeQuiz);
+    return;
+  }
+  const videoPending = await env.QUIZ_STATE.get("video-pending:" + chatId);
+  if (videoPending === "topic" && raw) {
+    await env.QUIZ_STATE.delete("video-pending:" + chatId);
+    const topic = raw.trim().slice(0, 500);
+    await env.QUIZ_STATE.put("video-topic:" + chatId, topic, { expirationTtl: 900 });
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "Choose the video quality:",
+      reply_markup: { inline_keyboard: [
+        [{ text: "🎬 Photorealistic cinematic (recommended)", callback_data: "video:cinematic" }],
+        [{ text: "✖ Cancel", callback_data: "video:cancel" }]
+      ]}
+    });
     return;
   }
   const forceAi = Boolean(await env.QUIZ_STATE.get("ai-prompt:" + chatId));
@@ -803,6 +862,7 @@ async function handleCallback(env, callback) {
   const parts = data.split(":");
   await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
   if (parts[0] === "section") {
+    if (parts[1] === "video") return askVideoTopic(env, chatId);
     if (parts[1] === "mixed") return askQuestionCount(env, chatId, "mixed", null);
     if (parts[1] === "subjects") return showSubjects(env, chatId);
     if (parts[1] === "chapters" || parts[1] === "topics") return showTopicSubjects(env, chatId);
@@ -876,6 +936,19 @@ async function handleCallback(env, callback) {
   }
   if (parts[0] === "topic-subject") return showTopics(env, chatId, parts[1]);
   if (parts[0] === "topic") return askQuestionCount(env, chatId, parts[1], parts.slice(2).join(":"));
+  if (parts[0] === "video") {
+    if (parts[1] === "cancel") {
+      await env.QUIZ_STATE.delete("video-pending:" + chatId);
+      await env.QUIZ_STATE.delete("video-topic:" + chatId);
+      return showMainMenu(env, chatId, "Video generation cancelled.");
+    }
+    if (parts[1] === "cinematic") {
+      const topic = await env.QUIZ_STATE.get("video-topic:" + chatId);
+      if (!topic) return telegram(env, "sendMessage", { chat_id: chatId, text: "Video topic expired. Tap Generate AI Video again." });
+      await env.QUIZ_STATE.delete("video-topic:" + chatId);
+      return dispatchVideoWorkflow(env, chatId, topic);
+    }
+  }
   const state = await env.QUIZ_STATE.get("quiz:" + chatId, "json");
   if (!state) return telegram(env, "sendMessage", { chat_id: chatId, text: "No active paper. Send /start to begin." });
   if (parts[0] === "palette") {
