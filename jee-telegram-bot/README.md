@@ -26,6 +26,19 @@ Add these under **Settings → Secrets and variables → Actions**:
 
 The deployment workflow creates or reuses the KV namespace and deploys the Worker. It then configures the Telegram webhook.
 
+## AI video generation
+
+The Telegram menu includes **🎬 Generate AI Video**. Send a topic, choose photorealistic cinematic quality, and the Worker dispatches the existing Kaggle GPU video pipeline. The finished MP4 is sent to the requesting Telegram chat.
+
+To enable the trigger:
+
+1. Create a GitHub fine-grained personal access token for this repository with **Actions: Read and write** permission.
+2. Save it in repository **Settings → Secrets and variables → Actions** as `VIDEO_GITHUB_TOKEN`.
+3. Run **Actions → Deploy JEE Telegram Quiz Bot → Run workflow** on `jee-telegram-quiz` so the Worker receives it as its `GITHUB_TOKEN` secret.
+4. Keep the existing `KAGGLE_API_TOKEN`, Kaggle secret dataset, Gemini key, and Telegram bot/chat credentials configured for the video pipeline.
+
+The video request starts a Kaggle kernel submission; the GitHub workflow reporting a successful submission does not itself guarantee that Kaggle has finished rendering. GPU availability, Kaggle quota, and model access can affect completion.
+
 ## Question bank
 
 The bank must contain only questions checked against an official NTA question paper and its final answer key. Each entry must include:
