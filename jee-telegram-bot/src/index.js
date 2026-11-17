@@ -275,39 +275,68 @@ async function showTopics(env, chatId, subject) {
 
 async function callGemini(env, prompt, maxTokens) {
   if (!env.GEMINI_API_KEY) throw new Error("Missing GEMINI_API_KEY secret");
-  const response = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-    {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          maxOutputTokens: maxTokens || 8192
+
+  // Try the configured primary model first, then stable Flash fallbacks.
+  // Retry temporary overload/rate-limit errors with short backoff.
+  const models = [
+    env.GEMINI_MODEL || "gemini-3.8-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash"
+  ].filter((m, i, a) => a.indexOf(m) === i);
+  let lastError = null;
+
+  for (const model of models) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const response = await fetch(
+          "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-goog-api-key": env.GEMINI_API_KEY },
+            body: JSON.stringify({
+              contents: [{ role: "user", parts: [{ text: prompt }] }],
+              generationConfig: {
+                responseMimeType: "application/json",
+                maxOutputTokens: maxTokens || 8192
+              }
+            })
+          }
+        );
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          const detail = data.error?.message || ("HTTP " + response.status);
+          lastError = new Error("Gemini API (" + model + "): " + detail);
+          const transient = response.status === 429 || response.status === 500 ||
+            response.status === 502 || response.status === 503 || response.status === 504 ||
+            /high demand|overload|temporar|resource exhausted|rate.?limit/i.test(detail);
+          if (!transient) break;
+          if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 900));
+          continue;
         }
-      })
+
+        const candidate = data.candidates?.[0];
+        const raw = candidate?.content?.parts?.map(p => p.text || "").join("").trim();
+        if (!raw) {
+          const reason = candidate?.finishReason || data.promptFeedback?.blockReason || "empty response";
+          lastError = new Error("Gemini returned no text (" + reason + ")");
+          break;
+        }
+        const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+        try {
+          return JSON.parse(cleaned);
+        } catch (e) {
+          lastError = new Error("Gemini returned incomplete/invalid JSON (" + (candidate?.finishReason || "unknown") + ")");
+          break;
+        }
+      } catch (e) {
+        lastError = e;
+        if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 900));
+      }
     }
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = data.error?.message || ("HTTP " + response.status);
-    throw new Error("Gemini API: " + detail);
   }
-  const candidate = data.candidates?.[0];
-  const raw = candidate?.content?.parts?.map(p => p.text || "").join("").trim();
-  if (!raw) {
-    const reason = candidate?.finishReason || data.promptFeedback?.blockReason || "empty response";
-    throw new Error("Gemini returned no text (" + reason + ")");
-  }
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  try {
-    return JSON.parse(cleaned);
-  } catch (e) {
-    const reason = candidate?.finishReason || "unknown";
-    throw new Error("Gemini returned incomplete/invalid JSON (" + reason + "). Try fewer questions.");
-  }
+  throw lastError || new Error("All Gemini models are temporarily unavailable");
 }
+
 function interpretRequest(rawText, forceAi) {
   const raw = String(rawText || "").trim();
   const lower = raw.toLowerCase();
