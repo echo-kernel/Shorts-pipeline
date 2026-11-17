@@ -2,6 +2,17 @@ name: AI Historical Shorts Pipeline
 
 on:
   workflow_dispatch:
+    inputs:
+      topic:
+        description: "Video topic or story"
+        required: false
+        type: string
+        default: "U Tirot Sing and the Khasi resistance against British expansion in 1829"
+      chat_id:
+        description: "Telegram chat ID for this video"
+        required: false
+        type: string
+        default: ""
   push:
     branches:
       - main
@@ -42,6 +53,30 @@ jobs:
             exit 1
           fi
           echo "Kaggle API token found."
+
+      - name: Inject this request into the Kaggle runner
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          VIDEO_TOPIC: ${{ inputs.topic }}
+          VIDEO_CHAT_ID: ${{ inputs.chat_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("kaggle/kaggle_runner.py")
+          source = path.read_text(encoding="utf-8")
+          anchor = 'REPO = "https://github.com/stonecrusher1india/Shorts-pipeline.git"'
+          injected = (
+              "os.environ['VIDEO_TOPIC'] = " + repr(os.getenv("VIDEO_TOPIC", "")) + "\\n"
+              "os.environ['VIDEO_CHAT_ID'] = " + repr(os.getenv("VIDEO_CHAT_ID", "")) + "\\n"
+              + anchor
+          )
+          if anchor not in source:
+              raise SystemExit("Could not find runner insertion point")
+          path.write_text(source.replace(anchor, injected, 1), encoding="utf-8")
+          PY
 
       - name: Submit kernel to Kaggle
         id: submit
