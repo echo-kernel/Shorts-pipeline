@@ -22,19 +22,40 @@ sys.path.insert(0, str(ROOT))
 
 # 2. Load private credentials
 def load_secret(name):
+    # Prefer Kaggle's encrypted Secrets feature.
     try:
         from kaggle_secrets import UserSecretsClient
         value = UserSecretsClient().get_secret(name)
         if value:
             return value.strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        print(f"Kaggle Secrets lookup unavailable for {name}: {type(exc).__name__}")
 
+    # Fallback: accept plain UTF-8 files or a UTF-8 secrets.json file.
     input_dir = Path("/kaggle/input")
     if input_dir.exists():
-        for path in input_dir.rglob(name):
-            if path.is_file():
-                return path.read_text(encoding="utf-8").strip()
+        candidates = list(input_dir.rglob(name))
+        for path in candidates:
+            if not path.is_file():
+                continue
+            try:
+                value = path.read_bytes().decode("utf-8-sig").strip()
+                if value:
+                    print(f"Loaded {name} from readable file: {path}")
+                    return value
+            except UnicodeDecodeError:
+                print(f"Skipping non-UTF-8 credential candidate: {path}")
+
+        for path in input_dir.rglob("*.json"):
+            if not path.is_file():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8-sig"))
+                if isinstance(data, dict) and data.get(name):
+                    print(f"Loaded {name} from JSON file: {path}")
+                    return str(data[name]).strip()
+            except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+                continue
 
     return ""
 
