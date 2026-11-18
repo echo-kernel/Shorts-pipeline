@@ -1049,6 +1049,7 @@ export default {
     }
   },
   async fetch(request, env) {
+    return new Response("Bot temporarily paused.", { status: 200 });
     if (request.method === "GET") return new Response("JEE Main Telegram Quiz Bot is running.");
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET || !env.QUIZ_STATE) {
