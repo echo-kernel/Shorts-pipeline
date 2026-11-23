@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Video topic or story"
+        description: "Historical video topic"
         required: false
         type: string
         default: "U Tirot Sing and the Khasi resistance against British expansion in 1829"
       chat_id:
-        description: "Telegram chat ID for this video"
+        description: "Optional Telegram chat ID override"
         required: false
         type: string
         default: ""
@@ -20,9 +20,13 @@ on:
       - "kaggle/**"
       - ".github/workflows/run.yml"
 
+permissions:
+  contents: read
+
 jobs:
-  submit-to-kaggle:
+  generate-and-render:
     runs-on: ubuntu-latest
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -33,111 +37,240 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install Kaggle CLI
+      - name: Install tools
         run: |
           python -m pip install --upgrade pip
-          pip install kaggle six
+          pip install kaggle google-genai requests
 
-      - name: Validate Kaggle files
-        run: |
-          test -f kaggle/kernel-metadata.json
-          test -f kaggle/kaggle_runner.py
-          echo "Kaggle files found."
-
-      - name: Validate Kaggle API token
+      - name: Validate required GitHub secrets
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
-          if [ -z "$KAGGLE_API_TOKEN" ]; then
-            echo "KAGGLE_API_TOKEN secret is missing."
-            exit 1
-          fi
-          echo "Kaggle API token found."
+          set -e
+          for name in GEMINI_API_KEY KAGGLE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            value="${!name}"
+            if [ -z "$value" ]; then
+              echo "Required GitHub Actions secret/input is missing: $name"
+              exit 1
+            fi
+            echo "$name is configured."
+          done
 
-      - name: Inject this request into the Kaggle runner
-        if: github.event_name == 'workflow_dispatch'
+      - name: Generate historical story with Gemini
         env:
-          VIDEO_TOPIC: ${{ inputs.topic }}
-          VIDEO_CHAT_ID: ${{ inputs.chat_id }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          VIDEO_TOPIC: ${{ inputs.topic || 'U Tirot Sing and the Khasi resistance against British expansion in 1829' }}
         run: |
           python - <<'PY'
           import json
           import os
+          import time
           from pathlib import Path
+          from google import genai
 
-          path = Path("kaggle/kaggle_runner.py")
-          source = path.read_text(encoding="utf-8")
-          anchor = 'REPO = "https://github.com/stonecrusher1india/Shorts-pipeline.git"'
-          injected = (
-              "os.environ['VIDEO_TOPIC'] = " + repr(os.getenv("VIDEO_TOPIC", "")) + "\n"
-              "os.environ['VIDEO_CHAT_ID'] = " + repr(os.getenv("VIDEO_CHAT_ID", "")) + "\n"
-              + anchor
-          )
-          if anchor not in source:
-              raise SystemExit("Could not find runner insertion point")
-          path.write_text(source.replace(anchor, injected, 1), encoding="utf-8")
+          topic = os.environ["VIDEO_TOPIC"]
+          prompt = f"""
+          Create a historically responsible YouTube Short about:
+          {topic}
+
+          Return ONLY valid JSON with this exact structure:
+          {{
+            "title": "Short engaging title",
+            "voiceover": "Natural Hindi documentary narration, approximately 105 to 120 words",
+            "scenes": [
+              "Cinematic English video prompt 1",
+              "Cinematic English video prompt 2",
+              "Cinematic English video prompt 3",
+              "Cinematic English video prompt 4"
+            ]
+          }}
+
+          Requirements:
+          - Historically accurate; do not invent quotations or events.
+          - Four visually different, realistic cinematic scenes.
+          - Describe clothing, architecture, environment, lighting and camera movement.
+          - No modern objects, text, logos, watermarks or fantasy elements.
+          - Vertical 9:16 composition.
+          - Hindi voiceover, English scene prompts.
+          - Return JSON only, without Markdown fences.
+          """
+
+          client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+          models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
+          failures = []
+
+          for model in models:
+              for attempt in range(2):
+                  try:
+                      print(f"Generating story with {model} (attempt {attempt + 1}/2)")
+                      response = client.models.generate_content(
+                          model=model,
+                          contents=prompt,
+                          config={"response_mime_type": "application/json"}
+                      )
+                      data = json.loads(response.text.strip())
+                      if not isinstance(data, dict):
+                          raise ValueError("Response is not a JSON object.")
+                      if not data.get("title") or not data.get("voiceover"):
+                          raise ValueError("Missing title or Hindi voiceover.")
+                      scenes = data.get("scenes")
+                      if not isinstance(scenes, list) or len(scenes) != 4:
+                          raise ValueError("Expected exactly four scene prompts.")
+                      if not all(isinstance(x, str) and x.strip() for x in scenes):
+                          raise ValueError("One or more scene prompts are empty.")
+                      data["gemini_model"] = model
+                      Path("kaggle/story.json").write_text(
+                          json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+                          encoding="utf-8"
+                      )
+                      print(f"Story generated successfully with {model}.")
+                      raise SystemExit(0)
+                  except SystemExit:
+                      raise
+                  except Exception as exc:
+                      failures.append(f"{model}: {type(exc).__name__}: {exc}")
+                      print(f"{model} failed: {type(exc).__name__}: {exc}")
+                      if attempt == 0 and any(x in str(exc).lower() for x in ["429", "500", "502", "503", "504", "timeout", "temporarily"]):
+                          time.sleep(12)
+                          continue
+                      break
+
+          raise SystemExit("All Gemini models failed:\n" + "\n".join(failures[-6:]))
           PY
 
-      - name: Submit kernel to Kaggle
-        id: submit
+      - name: Inject story into the private Kaggle kernel source
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          runner = Path("kaggle/kaggle_runner.py")
+          source = runner.read_text(encoding="utf-8")
+          anchor = 'REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"'
+          story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
+          payload = json.dumps(story, ensure_ascii=False, separators=(",", ":"))
+          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\n" + anchor
+
+          if anchor not in source:
+              raise SystemExit("Runner insertion point not found; refusing to submit.")
+          source = source.replace(anchor, injection, 1)
+          runner.write_text(source, encoding="utf-8")
+          print("Generated story embedded. No Gemini API key is sent to Kaggle.")
+          PY
+
+      - name: Submit Wan 2.1 GPU job to Kaggle
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
           kaggle kernels push -p kaggle
 
-      - name: Send Telegram notification
-        if: always()
+      - name: Wait for Kaggle video generation
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+          import time
+
+          kernel = "apuravjadhav/shorts-pipeline-wan"
+          deadline = time.time() + 5 * 60 * 60
+
+          while time.time() < deadline:
+              result = subprocess.run(
+                  ["kaggle", "kernels", "status", kernel],
+                  text=True, capture_output=True
+              )
+              status_text = (result.stdout + "\n" + result.stderr).strip()
+              print(status_text or f"Status command exit code: {result.returncode}")
+
+              if result.returncode != 0:
+                  raise SystemExit("Could not read Kaggle kernel status.")
+              normalized = status_text.lower()
+
+              if "complete" in normalized:
+                  print("Kaggle kernel completed.")
+                  raise SystemExit(0)
+              if "error" in normalized or "cancel" in normalized:
+                  raise SystemExit("Kaggle kernel ended unsuccessfully. Check its Kaggle logs.")
+
+              time.sleep(60)
+
+          raise SystemExit("Timed out waiting for Kaggle. Check the kernel status and logs.")
+          PY
+
+      - name: Download and verify final MP4
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -e
+          mkdir -p kaggle-output
+          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p kaggle-output -o
+          python - <<'PY'
+          from pathlib import Path
+          videos = list(Path("kaggle-output").rglob("historical_short.mp4"))
+          if not videos:
+              raise SystemExit("Kaggle completed but historical_short.mp4 was not found in kernel output.")
+          video = max(videos, key=lambda p: p.stat().st_size)
+          if video.stat().st_size < 10000:
+              raise SystemExit("Downloaded MP4 is unexpectedly small.")
+          print(f"Verified MP4: {video} ({video.stat().st_size / 1024 / 1024:.2f} MB)")
+          PY
+
+      - name: Send completed MP4 to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SUBMIT_STATUS: ${{ steps.submit.outcome }}
-          JOB_STATUS: ${{ job.status }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import os
-          import urllib.parse
-          import urllib.request
+          from pathlib import Path
+          import requests
+
+          videos = list(Path("kaggle-output").rglob("historical_short.mp4"))
+          video = max(videos, key=lambda p: p.stat().st_size)
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          chat = os.environ["TELEGRAM_CHAT_ID"]
+
+          with video.open("rb") as handle:
+              response = requests.post(
+                  f"https://api.telegram.org/bot{token}/sendVideo",
+                  data={
+                      "chat_id": chat,
+                      "caption": "🎬 Your AI historical Short is ready!"
+                  },
+                  files={"video": ("historical_short.mp4", handle, "video/mp4")},
+                  timeout=(30, 600)
+              )
+          response.raise_for_status()
+          result = response.json()
+          if not result.get("ok"):
+              raise SystemExit(f"Telegram rejected the video: {result}")
+          print("Final MP4 sent to Telegram.")
+          PY
+
+      - name: Notify Telegram if the workflow fails
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
 
           token = os.getenv("TELEGRAM_BOT_TOKEN")
-          chat_id = os.getenv("TELEGRAM_CHAT_ID")
-
-          if not token or not chat_id:
-              print("Telegram secrets are missing. Notification skipped.")
-              raise SystemExit(0)
-
-          submit_status = os.getenv("SUBMIT_STATUS", "unknown")
-          job_status = os.getenv("JOB_STATUS", "unknown")
-
-          if submit_status == "success" and job_status == "success":
-              message = (
-                  "✅ KAGGLE SUBMISSION SUCCESS\n\n"
-                  "The AI Historical Shorts kernel was submitted.\n"
-                  "This does NOT yet confirm video generation is complete.\n\n"
-                  "Check the Kaggle kernel:\n"
-                  "https://www.kaggle.com/code/apuravjadhav/shorts-pipeline-wan"
-              )
-          else:
-              message = (
-                  "❌ KAGGLE PIPELINE SUBMISSION FAILED\n\n"
-                  f"Submit step: {submit_status}\n"
-                  f"Workflow status: {job_status}\n\n"
-                  "Check GitHub Actions logs:\n"
-                  "https://github.com/stonecrusher1india/Shorts-pipeline/actions"
-              )
-
-          url = f"https://api.telegram.org/bot{token}/sendMessage"
-          data = urllib.parse.urlencode({
-              "chat_id": chat_id,
-              "text": message
-          }).encode()
-
-          request = urllib.request.Request(url, data=data)
-
-          try:
-              with urllib.request.urlopen(request, timeout=20) as response:
-                  print("Telegram notification sent.")
-                  print(response.read().decode())
-          except Exception as error:
-              print(f"Telegram notification failed: {error}")
-              raise
+          chat = os.getenv("TELEGRAM_CHAT_ID")
+          if token and chat:
+              requests.post(
+                  f"https://api.telegram.org/bot{token}/sendMessage",
+                  data={
+                      "chat_id": chat,
+                      "text": "❌ AI Historical Shorts failed. Check the GitHub Actions run and Kaggle kernel logs for the exact error."
+                  },
+                  timeout=20
+              ).raise_for_status()
           PY
