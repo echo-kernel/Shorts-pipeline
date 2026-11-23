@@ -9,31 +9,9 @@ from pathlib import Path
 
 import requests
 import edge_tts
-from google import genai
 
 from ai_video import generate_video
 
-
-# Gemini automatic fallback
-GEMINI_MODELS = [
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-3-flash-preview",
-]
-
-PREFERRED_MODEL = os.getenv("GEMINI_MODEL", "").strip()
-
-if PREFERRED_MODEL:
-    GEMINI_MODELS = [
-        PREFERRED_MODEL
-    ] + [
-        model for model in GEMINI_MODELS
-        if model != PREFERRED_MODEL
-    ]
 
 TOPIC = os.getenv(
     "VIDEO_TOPIC",
@@ -245,125 +223,32 @@ def is_temporary_error(error):
 
 
 def create_story():
-    api_key = os.getenv("GEMINI_API_KEY")
-
-    if not api_key:
-        raise RuntimeError("GEMINI_API_KEY secret is missing.")
-
-    client = genai.Client(api_key=api_key)
-
-    prompt = f"""
-Create a historically responsible YouTube Short about:
-{TOPIC}
-
-Return ONLY valid JSON:
-
-{{
-  "title": "Short engaging title",
-  "voiceover": "Hindi narration, approximately 105 to 120 words",
-  "scenes": [
-    "Cinematic English video prompt 1",
-    "Cinematic English video prompt 2",
-    "Cinematic English video prompt 3",
-    "Cinematic English video prompt 4"
-  ]
-}}
-
-Requirements:
-- Natural Hindi documentary narration.
-- Historically accurate.
-- Do not invent quotations or events.
-- Four visually different realistic cinematic scenes.
-- Describe clothing, architecture, environment, lighting and camera movement.
-- No modern objects, text, logos, watermarks or fantasy elements.
-- Vertical 9:16 composition.
-- Return JSON only, without Markdown fences.
-"""
-
-    failures = []
-
-    for model in GEMINI_MODELS:
-
-        tracker.active_model = model
-
-        tracker.update(
-            8,
-            "Trying Gemini model",
-            f"Testing: {model}"
+    """Load the story generated securely by GitHub Actions."""
+    raw = os.getenv("VIDEO_STORY_JSON", "").strip()
+    if not raw:
+        raise RuntimeError(
+            "VIDEO_STORY_JSON is missing. GitHub Actions must generate "
+            "the story before submitting this Kaggle kernel."
         )
 
-        for attempt in range(1, 3):
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("GitHub-generated story JSON is invalid.") from exc
 
-            try:
-                print(
-                    f"Trying Gemini model {model}, "
-                    f"attempt {attempt}/2"
-                )
+    if not isinstance(data, dict):
+        raise RuntimeError("Story payload must be a JSON object.")
+    if not data.get("title") or not data.get("voiceover"):
+        raise RuntimeError("Story payload is missing title or Hindi narration.")
+    scenes = data.get("scenes")
+    if not isinstance(scenes, list) or len(scenes) != 4 or not all(
+        isinstance(scene, str) and scene.strip() for scene in scenes
+    ):
+        raise RuntimeError("Story payload must contain exactly four non-empty scene prompts.")
 
-                response = client.models.generate_content(
-                    model=model,
-                    contents=prompt,
-                    config={
-                        "response_mime_type": "application/json"
-                    }
-                )
-
-                data = clean_json(response.text)
-
-                if len(data.get("scenes", [])) != 4:
-                    raise RuntimeError(
-                        "Gemini did not return exactly four scenes."
-                    )
-
-                if not data.get("voiceover"):
-                    raise RuntimeError(
-                        "Gemini returned empty narration."
-                    )
-
-                data["gemini_model"] = model
-
-                tracker.active_model = model
-
-                print(f"Gemini success: {model}")
-
-                return data
-
-            except Exception as exc:
-
-                error_text = f"{type(exc).__name__}: {exc}"
-
-                print(
-                    f"Gemini {model} failed: {error_text}"
-                )
-
-                failures.append(
-                    f"{model}: {error_text[:250]}"
-                )
-
-                tracker.retries += 1
-
-                if is_temporary_error(exc) and attempt == 1:
-
-                    wait = 15
-
-                    tracker.update(
-                        8,
-                        "Gemini temporary error",
-                        f"{model} failed. Retrying in {wait}s"
-                    )
-
-                    time.sleep(wait)
-                    continue
-
-                break
-
-    summary = "\n".join(failures[-7:])
-
-    raise RuntimeError(
-        "All configured Gemini models failed. "
-        "Check API access, quota and API key.\n"
-        + summary
-    )
+    tracker.active_model = data.get("gemini_model", "GitHub Actions")
+    print("Story received from GitHub Actions.")
+    return data
 
 
 async def create_voice(text, filename):
@@ -650,7 +535,7 @@ def main():
         tracker.start_stage(
             5,
             "Creating historical story",
-            "Automatic Gemini fallback enabled"
+            "Story prepared in GitHub Actions"
         )
 
         story = create_story()
