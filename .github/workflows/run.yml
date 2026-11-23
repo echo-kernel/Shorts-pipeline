@@ -90,10 +90,18 @@ jobs:
 
           Requirements:
           - Historically accurate; do not invent quotations or events.
-          - Four visually different, realistic cinematic scenes.
-          - Describe clothing, architecture, environment, lighting and camera movement.
-          - No modern objects, text, logos, watermarks or fantasy elements.
-          - Vertical 9:16 composition.
+          - Create a premium cinematic 3D animated historical short, like a high-quality
+            3D animated feature film, NOT live-action footage.
+          - All four scenes must share one coherent 3D art direction and consistent
+            character appearance, clothing, colors, proportions and materials.
+          - Describe each scene as a 3D animated shot: character design, 3D setting,
+            clothing and props, facial expression, body action, environment, lighting,
+            depth, and camera movement.
+          - Use dimensional 3D characters and detailed 3D environments, expressive
+            natural animation, cinematic lighting and smooth camera movement.
+          - Keep the visual style grounded in the real historical period; no fantasy.
+          - No modern objects, text, logos or watermarks.
+          - Vertical 9:16 composition with the main action centered for mobile viewing.
           - Hindi voiceover, English scene prompts.
           - Return JSON only, without Markdown fences.
           """
