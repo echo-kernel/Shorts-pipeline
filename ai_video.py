@@ -90,8 +90,14 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
         scene_prompt = (
             prompt.strip()
             + ". " + variations[i % len(variations)]
-            + ". Cinematic realistic motion, natural movement, "
-              "consistent historical setting, detailed environment."
+            + ". High-quality cinematic 3D animated feature-film style, "
+              "fully three-dimensional stylized characters and environments, "
+              "detailed 3D clothing and props, expressive but historically grounded "
+              "character animation, believable body movement, physically based "
+              "materials, dimensional lighting, volumetric atmosphere, smooth "
+              "cinematic camera motion, coherent animated scene. Keep the same "
+              "3D art direction and character design throughout this scene. "
+              "Not live-action footage, not a slideshow, not flat 2D illustration."
         )
 
         print(f"Generating clip {i + 1}/{clip_count}...")
