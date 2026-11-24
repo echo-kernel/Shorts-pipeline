@@ -399,7 +399,7 @@ jobs:
                   f"https://api.telegram.org/bot{token}/sendVideo",
                   data={
                       "chat_id": chat,
-                      "caption": "🎬 Your AI historical Short is ready!"
+                      "caption": "🎬 Your AI educational explainer Short is ready!"
                   },
                   files={"video": ("historical_short.mp4", handle, "video/mp4")},
                   timeout=(30, 600)
@@ -428,7 +428,7 @@ jobs:
                   f"https://api.telegram.org/bot{token}/sendMessage",
                   data={
                       "chat_id": chat,
-                      "text": "❌ AI Historical Shorts failed. Check the GitHub Actions run and Kaggle kernel logs for the exact error."
+                      "text": "❌ AI Explainer Shorts failed. Check the GitHub Actions run and Kaggle kernel logs for the exact error."
                   },
                   timeout=20
               ).raise_for_status()
