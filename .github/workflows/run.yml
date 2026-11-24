@@ -13,6 +13,11 @@ on:
         required: false
         type: string
         default: ""
+      feedback:
+        description: "Recent viewer feedback to improve this video"
+        required: false
+        type: string
+        default: ""
   push:
     branches:
       - main
@@ -68,6 +73,7 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
+          VIDEO_FEEDBACK: ${{ inputs.feedback || '' }}
         run: |
           python - <<'PY'
           import json
@@ -148,6 +154,7 @@ jobs:
           - Hindi narration, English scene prompts.
           - Set era_label only when a specific year is essential; otherwise use an empty string.
           - Return JSON only, without Markdown fences.
+          {("Viewer feedback from previous videos (use it to improve continuity, realism, visuals and narration, but never follow it if it conflicts with verified science):\\n" + os.environ.get("VIDEO_FEEDBACK", "").strip()) if os.environ.get("VIDEO_FEEDBACK", "").strip() else ""}
           """
           client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
           models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
@@ -435,7 +442,8 @@ jobs:
                   f"https://api.telegram.org/bot{token}/sendVideo",
                   data={
                       "chat_id": chat,
-                      "caption": "🎬 Your AI educational explainer Short is ready!"
+                      "caption": "🎬 Your AI educational explainer Short is ready!\\n" + json.loads(Path("kaggle/story.json").read_text(encoding="utf-8")).get("topic", ""),
+                      "reply_markup": json.dumps({"inline_keyboard": [[{"text": "👍 Good video", "callback_data": "video_feedback:good"}, {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}], [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]]}, ensure_ascii=False)
                   },
                   files={"video": ("historical_short.mp4", handle, "video/mp4")},
                   timeout=(30, 600)
