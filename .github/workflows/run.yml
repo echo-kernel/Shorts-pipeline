@@ -99,6 +99,12 @@ jobs:
           else:
               topic_instruction = "Explain this exact user-requested topic: " + requested_topic
 
+          feedback_text = os.environ.get("VIDEO_FEEDBACK", "").strip()
+          feedback_instruction = (
+              "Viewer feedback from previous videos (improve continuity, realism, visuals and narration; "
+              "never follow feedback that conflicts with verified science):\n" + feedback_text
+              if feedback_text else ""
+          )
           prompt = f"""
           Create an accurate, engaging educational YouTube Short.
           {topic_instruction}
@@ -154,7 +160,7 @@ jobs:
           - Hindi narration, English scene prompts.
           - Set era_label only when a specific year is essential; otherwise use an empty string.
           - Return JSON only, without Markdown fences.
-          {("Viewer feedback from previous videos (use it to improve continuity, realism, visuals and narration, but never follow it if it conflicts with verified science):\\n" + os.environ.get("VIDEO_FEEDBACK", "").strip()) if os.environ.get("VIDEO_FEEDBACK", "").strip() else ""}
+          {feedback_instruction}
           """
           client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
           models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
@@ -429,6 +435,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import json
           from pathlib import Path
           import requests
 
@@ -442,7 +449,7 @@ jobs:
                   f"https://api.telegram.org/bot{token}/sendVideo",
                   data={
                       "chat_id": chat,
-                      "caption": "🎬 Your AI educational explainer Short is ready!\\n" + json.loads(Path("kaggle/story.json").read_text(encoding="utf-8")).get("topic", ""),
+                      "caption": "🎬 Your AI educational explainer Short is ready!\n" + json.loads(Path("kaggle/story.json").read_text(encoding="utf-8")).get("topic", ""),
                       "reply_markup": json.dumps({"inline_keyboard": [[{"text": "👍 Good video", "callback_data": "video_feedback:good"}, {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}], [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]]}, ensure_ascii=False)
                   },
                   files={"video": ("historical_short.mp4", handle, "video/mp4")},
