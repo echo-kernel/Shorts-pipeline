@@ -23,6 +23,11 @@ on:
 permissions:
   contents: read
 
+# Only one workflow may submit to this single Kaggle kernel at a time.
+concurrency:
+  group: shorts-pipeline-kaggle-kernel
+  cancel-in-progress: false
+
 jobs:
   generate-and-render:
     runs-on: ubuntu-latest
@@ -175,39 +180,101 @@ jobs:
         run: |
           kaggle kernels push -p kaggle
 
-      - name: Wait for Kaggle video generation
+      - name: Diagnose Kaggle queue and wait for video
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
+          import os
           import subprocess
-          import sys
           import time
+          import requests
+          from datetime import datetime, timezone
 
           kernel = "apuravjadhav/shorts-pipeline-wan"
-          deadline = time.time() + 5 * 60 * 60
+          started = time.time()
+          deadline = started + 5 * 60 * 60
+          last_status = None
+          last_log_check = 0
+          notified_thresholds = set()
+
+          def telegram(message):
+              try:
+                  response = requests.post(
+                      f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
+                      data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": message},
+                      timeout=20
+                  )
+                  response.raise_for_status()
+                  print("Telegram diagnostic notification sent.")
+              except Exception as exc:
+                  print(f"Telegram notification failed: {type(exc).__name__}: {exc}")
 
           while time.time() < deadline:
+              now = datetime.now(timezone.utc).isoformat()
               result = subprocess.run(
                   ["kaggle", "kernels", "status", kernel],
                   text=True, capture_output=True
               )
-              status_text = (result.stdout + "\n" + result.stderr).strip()
-              print(status_text or f"Status command exit code: {result.returncode}")
+              status_text = (result.stdout + "\\n" + result.stderr).strip()
+              elapsed = int(time.time() - started)
+              print(f"\\n[{now}] elapsed={elapsed}s status_exit={result.returncode}")
+              print(status_text or "(Kaggle returned no status text)")
 
               if result.returncode != 0:
+                  print("DIAGNOSIS: Kaggle status API/CLI call failed; this is not evidence of a GPU queue.")
                   raise SystemExit("Could not read Kaggle kernel status.")
-              normalized = status_text.lower()
 
+              normalized = status_text.lower()
+              if normalized != last_status:
+                  print(f"STATUS CHANGE: {last_status!r} -> {normalized!r}")
+                  last_status = normalized
+                  if "running" in normalized:
+                      telegram("🚀 Kaggle has started running your AI Short. GPU execution is now underway.")
+                  elif "queued" in normalized:
+                      telegram("⏳ Kaggle accepted your notebook but it is QUEUED. Kaggle's status API does not reveal the exact internal queue reason; this usually means a worker/GPU is not yet available. I am collecting periodic diagnostics.")
+              
               if "complete" in normalized:
                   print("Kaggle kernel completed.")
                   raise SystemExit(0)
               if "error" in normalized or "cancel" in normalized:
-                  raise SystemExit("Kaggle kernel ended unsuccessfully. Check its Kaggle logs.")
+                  print("DIAGNOSIS: Kaggle reports an unsuccessful terminal state. Fetching logs in the next diagnostics step.")
+                  raise SystemExit("Kaggle kernel ended unsuccessfully. Check the uploaded diagnostics artifact.")
+
+              # Kaggle exposes status and logs, but not its internal scheduler reason.
+              # Capture logs periodically so any startup/runtime failure is visible as soon as logs exist.
+              if time.time() - last_log_check >= 300:
+                  logs = subprocess.run(
+                      ["kaggle", "kernels", "logs", kernel],
+                      text=True, capture_output=True
+                  )
+                  log_text = (logs.stdout + "\\n" + logs.stderr).strip()
+                  print("===== PERIODIC KAGGLE LOG CHECK =====")
+                  if log_text:
+                      print(log_text[-12000:])
+                  else:
+                      print("No execution log available yet. If status remains QUEUED, notebook code has probably not started.")
+                  last_log_check = time.time()
+
+              # Escalating queue alerts; these are elapsed-time warnings, not fabricated root causes.
+              for minutes in (15, 30, 60, 120):
+                  if elapsed >= minutes * 60 and minutes not in notified_thresholds and "queued" in normalized:
+                      notified_thresholds.add(minutes)
+                      note = (
+                          f"⏳ Kaggle is still QUEUED after {minutes} minutes. "
+                          "The Kaggle API does not expose the scheduler's exact reason. "
+                          "No notebook execution logs means the code has not visibly started; "
+                          "the likely issue is Kaggle worker/GPU capacity or scheduling. "
+                          "See GitHub Actions logs for timestamped status and log checks."
+                      )
+                      print("QUEUE DIAGNOSIS: " + note)
+                      telegram(note)
 
               time.sleep(60)
 
-          raise SystemExit("Timed out waiting for Kaggle. Check the kernel status and logs.")
+          raise SystemExit("Timed out after 5 hours waiting for Kaggle. See periodic status/log diagnostics.")
           PY
 
       - name: Collect Kaggle status and execution logs
