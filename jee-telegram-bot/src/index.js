@@ -721,6 +721,11 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     });
     return;
   }
+  const feedbackItems = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
+  const feedbackSummary = feedbackItems.slice(-12).map(item =>
+    "- " + item.rating.toUpperCase() + (item.topic ? " | video: " + item.topic : "") +
+    (item.comment ? " | note: " + item.comment : "")
+  ).join("\n").slice(0, 3000);
   const response = await fetch("https://api.github.com/repos/stonecrusher1india/Shorts-pipeline/actions/workflows/run.yml/dispatches", {
     method: "POST",
     headers: {
@@ -732,7 +737,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     },
     body: JSON.stringify({
       ref: "jee-telegram-quiz",
-      inputs: { topic: topic.slice(0, 500), chat_id: String(chatId) }
+      inputs: { topic: topic.slice(0, 500), chat_id: String(chatId), feedback: feedbackSummary }
     })
   });
   if (response.status !== 204) {
@@ -754,6 +759,36 @@ async function handleMessage(env, message) {
     await configureTelegramMenu(env, chatId);
     await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
     return;
+  }
+  const pendingVideoReport = await env.QUIZ_STATE.get("video-feedback-report:" + chatId, "json");
+  if (pendingVideoReport && raw && !raw.startsWith("/")) {
+    const items = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
+    items.push({
+      rating: "report",
+      topic: pendingVideoReport.topic || "",
+      comment: raw.slice(0, 700),
+      createdAt: new Date().toISOString()
+    });
+    await env.QUIZ_STATE.put("video-feedback:global", JSON.stringify(items.slice(-30)));
+    await env.QUIZ_STATE.delete("video-feedback-report:" + chatId);
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "✅ Your report is saved and will be included in the guidance for the next video."
+    });
+    return;
+  }
+  if (text === "/feedback") {
+    const items = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
+    const counts = items.reduce((acc, item) => {
+      acc[item.rating] = (acc[item.rating] || 0) + 1;
+      return acc;
+    }, {});
+    return telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "📊 Video feedback saved: " + items.length + " recent responses.\n👍 Good: " + (counts.good || 0) +
+        "\n👎 Poor: " + (counts.poor || 0) + "\n📝 Reports: " + (counts.report || 0) +
+        "\n\nRecent feedback is sent to the next video-generation prompt."
+    });
   }
   if (text === "/sections") return showSections(env, chatId);
   if (text === "/video" || text === "🎬 generate ai video") return askVideoTopic(env, chatId);
@@ -863,6 +898,30 @@ async function handleCallback(env, callback) {
   const data = String(callback.data || "");
   const parts = data.split(":");
   await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+  if (parts[0] === "video_feedback") {
+    const topic = String(callback.message.caption || "").replace(/^🎬.*?ready!?\s*/i, "").slice(0, 180);
+    if (parts[1] === "report") {
+      await env.QUIZ_STATE.put("video-feedback-report:" + chatId, JSON.stringify({
+        topic, createdAt: new Date().toISOString()
+      }), { expirationTtl: 86400 });
+      return telegram(env, "sendMessage", {
+        chat_id: chatId,
+        text: "📝 Tell me what was wrong with this video (for example: physics error, repeated scene, disconnected scenes, poor face or narration). Your report will guide the next video."
+      });
+    }
+    if (["good", "poor"].includes(parts[1])) {
+      const items = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
+      items.push({ rating: parts[1], topic, createdAt: new Date().toISOString() });
+      await env.QUIZ_STATE.put("video-feedback:global", JSON.stringify(items.slice(-30)));
+      return telegram(env, "sendMessage", {
+        chat_id: chatId,
+        text: parts[1] === "good"
+          ? "👍 Thanks! I'll use this positive feedback when guiding the next video."
+          : "👎 Thanks. I'll use this feedback to make the next video better. Tap 📝 Report a problem if you want to explain what went wrong."
+      });
+    }
+    return;
+  }
   if (parts[0] === "section") {
     if (parts[1] === "video") return askVideoTopic(env, chatId);
     if (parts[1] === "mixed") return askQuestionCount(env, chatId, "mixed", null);
