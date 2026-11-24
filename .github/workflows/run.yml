@@ -84,29 +84,38 @@ jobs:
           Return ONLY valid JSON with this exact structure:
           {{
             "title": "Short engaging title",
+            "era_label": "1829",
+            "character_bible": "A fixed, detailed appearance description for the central historical character; repeat the same face shape, age, hair, facial hair, skin tone, build and clothing in every scene.",
             "voiceover": "Natural Hindi documentary narration, approximately 105 to 120 words",
             "scenes": [
-              "Cinematic English video prompt 1",
-              "Cinematic English video prompt 2",
-              "Cinematic English video prompt 3",
-              "Cinematic English video prompt 4"
+              "Scene 1: opening establishing shot",
+              "Scene 2: character introduction",
+              "Scene 3: historical context",
+              "Scene 4: rising conflict",
+              "Scene 5: key action",
+              "Scene 6: consequence",
+              "Scene 7: closing cinematic shot"
             ]
           }}
 
           Requirements:
           - Historically accurate; do not invent quotations or events.
-          - Create a premium cinematic 3D animated historical short, like a high-quality
-            3D animated feature film, NOT live-action footage.
-          - All four scenes must share one coherent 3D art direction and consistent
-            character appearance, clothing, colors, proportions and materials.
-          - Describe each scene as a 3D animated shot: character design, 3D setting,
-            clothing and props, facial expression, body action, environment, lighting,
-            depth, and camera movement.
-          - Use dimensional 3D characters and detailed 3D environments, expressive
-            natural animation, cinematic lighting and smooth camera movement.
-          - Keep the visual style grounded in the real historical period; no fantasy.
-          - No modern objects, text, logos or watermarks.
+          - Create a photorealistic live-action historical epic, NOT 3D animation, CGI or cartoon.
+          - All seven scenes must use the same realistic cinematic visual style, film texture,
+            natural lighting, color grade and historically accurate production design.
+          - Create one detailed character_bible for the main historical character and
+            repeat the exact same physical appearance and clothing in every scene.
+          - Each scene must be a sequential story beat that naturally continues from
+            the previous scene; do not jump to unrelated locations or visual styles.
+          - Keep the same period, region, weather, costume palette and character identity
+            unless the story explicitly requires a change.
+          - Prefer wide and medium shots; avoid extreme face close-ups and lip-sync.
+          - Describe realistic human movement, authentic 19th-century clothing, natural
+            skin texture, real environments and restrained camera moves.
+          - No 3D animation, cartoon, illustration, plastic-looking faces, fantasy,
+            modern objects, visible text, captions, logos or watermarks.
           - Vertical 9:16 composition with the main action centered for mobile viewing.
+          - Return era_label as the historical year (for example 1829), or an empty string if unknown.
           - Hindi voiceover, English scene prompts.
           - Return JSON only, without Markdown fences.
           """
