@@ -8,7 +8,7 @@ const MAIN_MENU = {
     [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
     [{ text: "📊 Available Topics" }, { text: "📊 Bank Coverage" }],
     [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
-    [{ text: "🎬 Generate AI Video" }],
+    [{ text: "🎥 Request New Video" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -727,7 +727,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     "- " + item.rating.toUpperCase() + (item.topic ? " | video: " + item.topic : "") +
     (item.comment ? " | note: " + item.comment : "")
   ).join("\n").slice(0, 3000);
-  const response = await fetch("https://api.github.com/repos/stonecrusher1india/Shorts-pipeline/actions/workflows/run.yml/dispatches", {
+  const response = await fetch("https://api.github.com/repos/echo-kernel/Shorts-pipeline/actions/workflows/run.yml/dispatches", {
     method: "POST",
     headers: {
       "Accept": "application/vnd.github+json",
@@ -748,7 +748,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
   }
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "🚀 Your cinematic AI video job has been queued!\n\nTopic: " + topic.slice(0, 400) + "\nQuality: photorealistic cinematic, vertical 9:16, Hindi narration and subtitles.\n\nI'll send progress and the finished MP4 here when the GPU workflow runs."
+    text: "🚀 Your AI explainer video request has been sent to GitHub Actions!\n\nTopic: " + topic.slice(0, 400) + "\nQuality: photorealistic educational explainer, vertical 9:16, Hindi narration and subtitles.\n\nI'll send the finished MP4 here when generation completes."
   });
 }
 
@@ -792,7 +792,7 @@ async function handleMessage(env, message) {
     });
   }
   if (text === "/sections") return showSections(env, chatId);
-  if (text === "/video" || text === "🎬 generate ai video") return askVideoTopic(env, chatId);
+  if (text === "/video" || text === "🎬 generate ai video" || text === "🎥 request new video") return askVideoTopic(env, chatId);
   if (text === "/subjects") return showSubjects(env, chatId);
   if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
   if (text === "/help" || text === "🆘 help") {
