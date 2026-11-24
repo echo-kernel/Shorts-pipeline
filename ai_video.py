@@ -55,7 +55,7 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA GPU is required.")
 
-    duration = max(1, min(14, int(duration)))
+    duration = max(1.0, min(30.0, float(duration)))
 
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -90,14 +90,13 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
         scene_prompt = (
             prompt.strip()
             + ". " + variations[i % len(variations)]
-            + ". High-quality cinematic 3D animated feature-film style, "
-              "fully three-dimensional stylized characters and environments, "
-              "detailed 3D clothing and props, expressive but historically grounded "
-              "character animation, believable body movement, physically based "
-              "materials, dimensional lighting, volumetric atmosphere, smooth "
-              "cinematic camera motion, coherent animated scene. Keep the same "
-              "3D art direction and character design throughout this scene. "
-              "Not live-action footage, not a slideshow, not flat 2D illustration."
+            + ". Photorealistic live-action historical epic film, natural human proportions, "
+              "realistic skin texture, authentic period costumes and materials, "
+              "cinematic natural lighting, grounded physical environments, "
+              "documentary-level historical realism, subtle film grain, "
+              "smooth restrained camera movement. Maintain one consistent "
+              "photorealistic visual language. Not 3D animation, not cartoon, "
+              "not illustration, not fantasy."
         )
 
         print(f"Generating clip {i + 1}/{clip_count}...")
@@ -109,6 +108,11 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
             num_frames=frames_per_clip,
             num_inference_steps=20,
             guidance_scale=5.0,
+            negative_prompt=(
+                "3D cartoon, stylized animation, animated movie, CGI character, "
+                "plastic skin, toy-like face, illustration, anime, fantasy, "
+                "modern clothing, text, letters, subtitles, watermark, logo"
+            ),
             generator=torch.Generator("cuda").manual_seed(
                 20261115 + i * 7919
             )
