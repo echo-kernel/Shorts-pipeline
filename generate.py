@@ -18,7 +18,7 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
+VOICE = os.getenv("TTS_VOICE", "hi-IN-SwaraNeural")
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
@@ -241,10 +241,10 @@ def create_story():
     if not data.get("title") or not data.get("voiceover"):
         raise RuntimeError("Story payload is missing title or Hindi narration.")
     scenes = data.get("scenes")
-    if not isinstance(scenes, list) or len(scenes) != 4 or not all(
+    if not isinstance(scenes, list) or len(scenes) != 7 or not all(
         isinstance(scene, str) and scene.strip() for scene in scenes
     ):
-        raise RuntimeError("Story payload must contain exactly four non-empty scene prompts.")
+        raise RuntimeError("Story payload must contain exactly seven non-empty scene prompts.")
 
     tracker.active_model = data.get("gemini_model", "GitHub Actions")
     print("Story received from GitHub Actions.")
@@ -276,7 +276,10 @@ def generate_voice(text):
 
 
 def make_srt(text, duration, filename):
-    words = text.split()
+    # Attach punctuation to the preceding word so punctuation cannot become
+    # a standalone subtitle cue (for example, a floating comma).
+    text = re.sub(r"\s+([,.;:!?।])", r"\1", text)
+    words = [word for word in text.split() if not re.fullmatch(r"[,.;:!?।]+", word)]
 
     if not words:
         raise RuntimeError("Narration has no words.")
@@ -320,8 +323,9 @@ def make_srt(text, duration, filename):
             file.write(" ".join(group) + "\n\n")
 
 
-def create_clips(scenes):
+def create_clips(scenes, total_duration, character_bible=""):
     clips = []
+    scene_duration = float(total_duration) / len(scenes)
 
     for index, scene in enumerate(scenes, start=1):
 
@@ -331,8 +335,8 @@ def create_clips(scenes):
 
         tracker.start_stage(
             percent,
-            f"Generating scene {index}/4",
-            f"Completed scenes: {index - 1}/4"
+            f"Generating scene {index}/{len(scenes)}",
+            f"Completed scenes: {index - 1}/{len(scenes)}"
         )
 
         def retry_callback(
@@ -345,16 +349,16 @@ def create_clips(scenes):
 
             tracker.update(
                 percent,
-                f"Retrying scene {index}/4",
+                f"Retrying scene {index}/{len(scenes)}",
                 f"Attempt {attempt}/{maximum} failed.\n"
                 f"Reason: {error[:300]}\n"
                 f"Retrying in {wait}s"
             )
 
         generate_video(
-            prompt=scene,
+            prompt=(character_bible + ". " if character_bible else "") + scene,
             output_path=output,
-            duration=10,
+            duration=scene_duration,
             on_retry=retry_callback
         )
 
@@ -423,7 +427,7 @@ def join_clips(clips):
     return joined
 
 
-def assemble_final_video(joined, voice, narration):
+def assemble_final_video(joined, voice, narration, era_label="1829"):
 
     voice_duration = get_duration(voice)
 
@@ -435,6 +439,7 @@ def assemble_final_video(joined, voice, narration):
         subtitles
     )
 
+    # Keep the opening year as a proper five-second overlay, not generated text.
     # IMPORTANT FIX:
     # FFmpeg must use the actual subtitle file path.
     subtitle_path = subtitles.resolve().as_posix()
@@ -455,10 +460,24 @@ def assemble_final_video(joined, voice, narration):
         "OutlineColour=&H00000000,BorderStyle=1,"
         "Outline=2,Shadow=1,Alignment=2,MarginV=120'"
     )
+    if era_label:
+        safe_label = era_label.replace("'", "")
+        subtitle_filter = (
+            f"drawtext=text='{safe_label}':font='DejaVu Sans':"
+            "fontsize=76:fontcolor=white:borderw=3:bordercolor=black:"
+            "x=(w-text_w)/2:y=170:enable='between(t,0,5)',"
+            + subtitle_filter
+        )
+
+    video_duration = get_duration(joined)
+    if video_duration + 0.5 < voice_duration:
+        raise RuntimeError(
+            f"Unique footage is too short ({video_duration:.1f}s) for narration "
+            f"({voice_duration:.1f}s); refusing to loop or repeat scenes."
+        )
 
     run_command([
         "ffmpeg", "-y",
-        "-stream_loop", "-1",
         "-i", str(joined.resolve()),
         "-i", str(voice.resolve()),
         "-vf", subtitle_filter,
@@ -568,11 +587,14 @@ def main():
 
         tracker.start_stage(
             25,
-            "Preparing four AI scenes"
+            "Preparing seven AI scenes",
+            f"Target unique footage: {get_duration(voice):.1f}s"
         )
 
         clips = create_clips(
-            story["scenes"]
+            story["scenes"],
+            total_duration=get_duration(voice),
+            character_bible=story.get("character_bible", "")
         )
 
         tracker.start_stage(
@@ -597,7 +619,8 @@ def main():
         final_video = assemble_final_video(
             joined,
             voice,
-            story["voiceover"]
+            story["voiceover"],
+            era_label=story.get("era_label", "1829")
         )
 
         tracker.start_stage(
