@@ -4,7 +4,7 @@ import sys
 import subprocess
 from pathlib import Path
 
-REPO = "https://github.com/stonecrusher1india/Shorts-pipeline.git"
+REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"
 BRANCH = "wan-kaggle-test"
 ROOT = Path("/kaggle/working/Shorts-pipeline")
 
