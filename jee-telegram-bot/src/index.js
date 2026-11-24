@@ -90,7 +90,8 @@ async function configureTelegramMenu(env, chatId) {
     { command: "mistakes", description: "Review incorrect answers" },
     { command: "help", description: "How to use the quiz bot" },
     { command: "stop", description: "Stop the current quiz" },
-    { command: "video", description: "Generate a cinematic AI video" }
+    { command: "video", description: "Generate an educational AI video" },
+    { command: "feedback", description: "View saved video feedback" }
   ]});
   await telegram(env, "setChatMenuButton", {
     chat_id: chatId,
