@@ -343,6 +343,34 @@ jobs:
           print(f"Verified MP4: {video} ({video.stat().st_size / 1024 / 1024:.2f} MB)")
           PY
 
+      - name: Save completed topic to rotation history
+        run: |
+          python - <<'PY'
+          import json
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
+          topic = story["topic"].strip()
+          path = Path("used_topics.json")
+          data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"topics": []}
+          topics = data.get("topics", [])
+          topics = [item for item in topics if item.get("topic", "").casefold() != topic.casefold()]
+          topics.append({"topic": topic, "completed_at": datetime.now(timezone.utc).isoformat()})
+          path.write_text(json.dumps({"topics": topics[-100:]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+          subprocess.run(["git", "add", "used_topics.json"], check=True)
+          if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode == 0:
+              print("Topic already recorded.")
+          else:
+              subprocess.run(["git", "commit", "-m", "Record completed explainer topic"], check=True)
+              subprocess.run(["git", "push"], check=True)
+              print(f"Recorded completed topic: {topic}")
+          PY
+
       - name: Upload final MP4 to GitHub Actions
         uses: actions/upload-artifact@v4
         with:
