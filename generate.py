@@ -5,6 +5,10 @@ import json
 import time
 import asyncio
 import subprocess
+import math
+import random
+import wave
+from array import array
 from pathlib import Path
 
 import requests
@@ -427,6 +431,50 @@ def join_clips(clips):
     return joined
 
 
+def create_background_music(duration, filename):
+    """Create a very quiet, original cinematic ambient drone without external assets."""
+    sample_rate = 24000
+    total_samples = max(1, int(sample_rate * duration))
+    rng = random.Random(1829)
+    samples = array("h")
+    noise_state = 0.0
+
+    # Soft D-minor-inspired sustained tones; deliberately restrained under narration.
+    tones = [
+        (73.42, 0.045),
+        (110.00, 0.026),
+        (146.83, 0.018),
+        (220.00, 0.012),
+        (293.66, 0.006),
+    ]
+
+    for i in range(total_samples):
+        t = i / sample_rate
+        fade_in = min(1.0, t / 2.5)
+        fade_out = min(1.0, max(0.0, (duration - t) / 3.0))
+        swell = 0.82 + 0.18 * math.sin(2 * math.pi * 0.035 * t)
+        value = 0.0
+
+        for frequency, amplitude in tones:
+            vibrato = 1.0 + 0.0015 * math.sin(2 * math.pi * 0.12 * t)
+            value += amplitude * math.sin(2 * math.pi * frequency * vibrato * t)
+
+        # A very faint filtered-air texture gives the bed a little atmosphere.
+        noise_state = 0.985 * noise_state + 0.015 * rng.uniform(-1.0, 1.0)
+        value += 0.003 * noise_state
+
+        value *= fade_in * fade_out * swell
+        samples.append(max(-32767, min(32767, int(value * 32767))))
+
+    with wave.open(str(filename), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(sample_rate)
+        audio.writeframes(samples.tobytes())
+
+    return filename
+
+
 def assemble_final_video(joined, voice, narration, era_label="1829"):
 
     voice_duration = get_duration(voice)
@@ -476,13 +524,21 @@ def assemble_final_video(joined, voice, narration, era_label="1829"):
             f"({voice_duration:.1f}s); refusing to loop or repeat scenes."
         )
 
+    music_file = WORK_DIR / "cinematic_ambient.wav"
+    create_background_music(voice_duration, music_file)
+
     run_command([
         "ffmpeg", "-y",
         "-i", str(joined.resolve()),
         "-i", str(voice.resolve()),
+        "-i", str(music_file.resolve()),
+        "-filter_complex",
+        "[1:a]volume=1.0[voice];"
+        "[2:a]volume=0.18[music];"
+        "[voice][music]amix=inputs=2:duration=first:dropout_transition=3[aout]",
         "-vf", subtitle_filter,
         "-map", "0:v:0",
-        "-map", "1:a:0",
+        "-map", "[aout]",
         "-t", str(voice_duration),
         "-c:v", "libx264",
         "-preset", "veryfast",
