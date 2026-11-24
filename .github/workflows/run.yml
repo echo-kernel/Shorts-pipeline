@@ -119,12 +119,28 @@ jobs:
           - Explain how something works, how it is built, or why a phenomenon happens.
           - Prefer visually interesting subjects: trains, aeroplanes, forts, bridges, dams,
             engines, electricity, rockets, space and everyday technology.
-          - Keep facts, science, engineering and historical details accurate; never invent them.
-          - Make all seven scenes a connected, step-by-step explanation in the correct order.
+          - Treat scientific, engineering and physics accuracy as the highest priority; entertainment is secondary.
+          - Verify every mechanism against established science and engineering before writing.
+          - For motion, correctly represent forces, gravity, inertia, friction, lift, thrust, pressure,
+            energy conversion, momentum and cause-and-effect wherever relevant.
+          - Never depict impossible motion, unsupported mechanisms, incorrect component placement,
+            physically impossible scale, or objects moving without a force.
+          - For aircraft, distinguish lift from thrust and show airflow and control surfaces plausibly;
+            for trains, show wheel-rail contact, traction and braking plausibly; for rockets, show thrust
+            in the correct direction and do not imply rockets push against air in space.
+          - Do not invent numerical values, speeds, temperatures, dates, technical specifications,
+            formulas or quotes. Include numbers only when confident they are correct and contextualized.
+          - If a detail is uncertain, omit it or describe it cautiously instead of guessing.
+          - Do not simplify an explanation so far that it becomes scientifically false.
+          - Make all seven scenes a connected, step-by-step explanation in the correct causal order.
           - Each scene must visually demonstrate the exact narration point; no generic filler.
           - Use photorealistic live-action documentary visuals, NOT 3D animation, CGI or cartoon.
           - Maintain one consistent visual style, natural lighting, film texture and color grade.
           - Use realistic materials, scale, physics, movement and engineering details.
+          - Video-generation visuals can hallucinate: describe simple, physically plausible actions,
+            avoid complex simultaneous motion, and never rely on generated text or labels to explain science.
+          - Perform a separate fact-check pass: identify inaccurate claims, missing causal steps and
+            visuals that contradict the narration; revise them before returning JSON.
           - No random letters, punctuation, labels, captions, logos, watermarks or readable text
             inside generated footage. Text overlays are handled separately.
           - Prefer wide and medium shots; avoid extreme face close-ups and lip-sync.
