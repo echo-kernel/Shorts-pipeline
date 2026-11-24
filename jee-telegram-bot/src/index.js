@@ -104,7 +104,7 @@ async function showSections(env, chatId) {
     chat_id: chatId,
     text: "📚 JEE BOT SECTIONS — choose one:",
     reply_markup: { inline_keyboard: [
-      [{ text: "🎬 Generate AI Video", callback_data: "section:video" }],
+      [{ text: "🎥 Request New Video", callback_data: "section:video" }],
       [{ text: "🎯 Mixed PYQ", callback_data: "section:mixed" }],
       [{ text: "📚 Subjects", callback_data: "section:subjects" }],
       [{ text: "📖 Chapter PYQ", callback_data: "section:chapters" }],
@@ -1006,7 +1006,7 @@ async function handleCallback(env, callback) {
     }
     if (parts[1] === "cinematic") {
       const topic = await env.QUIZ_STATE.get("video-topic:" + chatId);
-      if (!topic) return telegram(env, "sendMessage", { chat_id: chatId, text: "Video topic expired. Tap Generate AI Video again." });
+      if (!topic) return telegram(env, "sendMessage", { chat_id: chatId, text: "Video topic expired. Tap Request New Video again." });
       await env.QUIZ_STATE.delete("video-topic:" + chatId);
       return dispatchVideoWorkflow(env, chatId, topic);
     }
