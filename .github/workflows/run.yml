@@ -84,7 +84,7 @@ jobs:
           Return ONLY valid JSON with this exact structure:
           {{
             "title": "Short engaging title",
-            "era_label": "1829",
+            "era_label": "",
             "character_bible": "A fixed, detailed appearance description for the central historical character; repeat the same face shape, age, hair, facial hair, skin tone, build and clothing in every scene.",
             "voiceover": "Natural Hindi documentary narration, approximately 105 to 120 words",
             "scenes": [
