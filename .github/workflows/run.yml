@@ -136,11 +136,11 @@ jobs:
                       data = json.loads(response.text.strip())
                       if not isinstance(data, dict):
                           raise ValueError("Response is not a JSON object.")
-                      if not data.get("title") or not data.get("voiceover"):
-                          raise ValueError("Missing title or Hindi voiceover.")
+                      if not data.get("title") or not data.get("voiceover") or not data.get("character_bible"):
+                          raise ValueError("Missing title, character bible or Hindi voiceover.")
                       scenes = data.get("scenes")
-                      if not isinstance(scenes, list) or len(scenes) != 4:
-                          raise ValueError("Expected exactly four scene prompts.")
+                      if not isinstance(scenes, list) or len(scenes) != 7:
+                          raise ValueError("Expected exactly seven scene prompts.")
                       if not all(isinstance(x, str) and x.strip() for x in scenes):
                           raise ValueError("One or more scene prompts are empty.")
                       data["gemini_model"] = model
