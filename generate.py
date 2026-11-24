@@ -22,7 +22,7 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-VOICE = os.getenv("TTS_VOICE", "hi-IN-SwaraNeural")
+VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
