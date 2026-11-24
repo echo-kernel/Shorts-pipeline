@@ -90,13 +90,17 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
         scene_prompt = (
             prompt.strip()
             + ". " + variations[i % len(variations)]
-            + ". Photorealistic live-action historical epic film, natural human proportions, "
-              "realistic skin texture, authentic period costumes and materials, "
-              "cinematic natural lighting, grounded physical environments, "
-              "documentary-level historical realism, subtle film grain, "
-              "smooth restrained camera movement. Maintain one consistent "
-              "photorealistic visual language. Not 3D animation, not cartoon, "
-              "not illustration, not fantasy."
+            + ". Photorealistic live-action educational documentary footage, "
+              "accurate present-day or historical setting as specified by the scene, "
+              "realistic materials, correct engineering geometry and believable scale, "
+              "physically plausible motion governed by real-world forces, gravity, inertia, "
+              "friction, pressure, lift and thrust as appropriate, "
+              "cause-and-effect must be visible and physically coherent, "
+              "no impossible motion, no objects passing through each other, "
+              "no incorrectly assembled machinery, no contradictory moving parts, "
+              "natural lighting, subtle film grain, smooth restrained camera movement. "
+              "Maintain one consistent photorealistic documentary visual language. "
+              "Not 3D animation, not cartoon, not illustration, not fantasy."
         )
 
         print(f"Generating clip {i + 1}/{clip_count}...")
@@ -110,8 +114,9 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
             guidance_scale=5.0,
             negative_prompt=(
                 "3D cartoon, stylized animation, animated movie, CGI character, "
-                "plastic skin, toy-like face, illustration, anime, fantasy, "
-                "modern clothing, text, letters, subtitles, watermark, logo"
+                "plastic skin, toy-like face, illustration, anime, fantasy, impossible physics, "
+                "modern clothing when period setting is requested, impossible motion, broken geometry, " 
+                "incorrect machinery, floating objects, text, letters, subtitles, watermark, logo"
             ),
             generator=torch.Generator("cuda").manual_seed(
                 20261115 + i * 7919
