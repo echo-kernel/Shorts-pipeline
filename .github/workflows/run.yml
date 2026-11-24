@@ -1,13 +1,13 @@
-name: AI Historical Shorts Pipeline
+name: AI Explainer Shorts Pipeline
 
 on:
   workflow_dispatch:
     inputs:
       topic:
-        description: "Historical video topic"
+        description: "Topic to explain; use AUTO for automatic topic selection"
         required: false
         type: string
-        default: "U Tirot Sing and the Khasi resistance against British expansion in 1829"
+        default: "AUTO"
       chat_id:
         description: "Optional Telegram chat ID override"
         required: false
@@ -21,7 +21,7 @@ on:
       - ".github/workflows/run.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 # Only one workflow may submit to this single Kaggle kernel at a time.
 concurrency:
@@ -64,10 +64,10 @@ jobs:
             echo "$name is configured."
           done
 
-      - name: Generate historical story with Gemini
+      - name: Generate educational explainer with Gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          VIDEO_TOPIC: ${{ inputs.topic || 'U Tirot Sing and the Khasi resistance against British expansion in 1829' }}
+          VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
         run: |
           python - <<'PY'
           import json
@@ -76,50 +76,63 @@ jobs:
           from pathlib import Path
           from google import genai
 
-          topic = os.environ["VIDEO_TOPIC"]
+          requested_topic = os.environ["VIDEO_TOPIC"].strip()
+          history_path = Path("used_topics.json")
+          try:
+              history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else {"topics": []}
+          except Exception:
+              history = {"topics": []}
+          recent_topics = [x.get("topic", "") for x in history.get("topics", [])[-40:] if isinstance(x, dict)]
+          if requested_topic.upper() in ("", "AUTO", "RANDOM"):
+              topic_instruction = (
+                  "Choose one fresh, highly visual educational topic from science, technology, "
+                  "trains, aeroplanes, vehicles, forts, architecture, bridges, dams, power generation, "
+                  "space, machines and everyday engineering. Avoid these recently completed topics: "
+                  + json.dumps(recent_topics, ensure_ascii=False)
+              )
+          else:
+              topic_instruction = "Explain this exact user-requested topic: " + requested_topic
+
           prompt = f"""
-          Create a historically responsible YouTube Short about:
-          {topic}
+          Create an accurate, engaging educational YouTube Short.
+          {topic_instruction}
 
           Return ONLY valid JSON with this exact structure:
           {{
-            "title": "Short engaging title",
+            "topic": "The specific topic selected or requested",
+            "title": "Short engaging question-style title",
             "era_label": "",
-            "character_bible": "A fixed, detailed appearance description for the central historical character; repeat the same face shape, age, hair, facial hair, skin tone, build and clothing in every scene.",
-            "voiceover": "Natural Hindi documentary narration, approximately 105 to 120 words",
+            "character_bible": "",
+            "voiceover": "Natural conversational Hindi explainer narration, approximately 105 to 120 words",
             "scenes": [
-              "Scene 1: opening establishing shot",
-              "Scene 2: character introduction",
-              "Scene 3: historical context",
-              "Scene 4: rising conflict",
-              "Scene 5: key action",
-              "Scene 6: consequence",
-              "Scene 7: closing cinematic shot"
+              "Scene 1: show the object or phenomenon and pose the central question",
+              "Scene 2: introduce the first important component",
+              "Scene 3: explain the next step in the process",
+              "Scene 4: show how the main mechanism works",
+              "Scene 5: explain what happens during operation",
+              "Scene 6: show the result or an important real-world detail",
+              "Scene 7: memorable visual summary"
             ]
           }}
 
           Requirements:
-          - Historically accurate; do not invent quotations or events.
-          - Create a photorealistic live-action historical epic, NOT 3D animation, CGI or cartoon.
-          - All seven scenes must use the same realistic cinematic visual style, film texture,
-            natural lighting, color grade and historically accurate production design.
-          - Create one detailed character_bible for the main historical character and
-            repeat the exact same physical appearance and clothing in every scene.
-          - Each scene must be a sequential story beat that naturally continues from
-            the previous scene; do not jump to unrelated locations or visual styles.
-          - Keep the same period, region, weather, costume palette and character identity
-            unless the story explicitly requires a change.
+          - Explain how something works, how it is built, or why a phenomenon happens.
+          - Prefer visually interesting subjects: trains, aeroplanes, forts, bridges, dams,
+            engines, electricity, rockets, space and everyday technology.
+          - Keep facts, science, engineering and historical details accurate; never invent them.
+          - Make all seven scenes a connected, step-by-step explanation in the correct order.
+          - Each scene must visually demonstrate the exact narration point; no generic filler.
+          - Use photorealistic live-action documentary visuals, NOT 3D animation, CGI or cartoon.
+          - Maintain one consistent visual style, natural lighting, film texture and color grade.
+          - Use realistic materials, scale, physics, movement and engineering details.
+          - No random letters, punctuation, labels, captions, logos, watermarks or readable text
+            inside generated footage. Text overlays are handled separately.
           - Prefer wide and medium shots; avoid extreme face close-ups and lip-sync.
-          - Describe realistic human movement, authentic 19th-century clothing, natural
-            skin texture, real environments and restrained camera moves.
-          - No 3D animation, cartoon, illustration, plastic-looking faces, fantasy,
-            modern objects, visible text, captions, logos or watermarks.
-          - Vertical 9:16 composition with the main action centered for mobile viewing.
-          - Return era_label as the historical year (for example 1829), or an empty string if unknown.
-          - Hindi voiceover, English scene prompts.
+          - Vertical 9:16 composition, main action centered for mobile viewing.
+          - Hindi narration, English scene prompts.
+          - Set era_label only when a specific year is essential; otherwise use an empty string.
           - Return JSON only, without Markdown fences.
           """
-
           client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
           models = ["gemini-3.8-flash", "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"]
           failures = []
@@ -136,8 +149,8 @@ jobs:
                       data = json.loads(response.text.strip())
                       if not isinstance(data, dict):
                           raise ValueError("Response is not a JSON object.")
-                      if not data.get("title") or not data.get("voiceover") or not data.get("character_bible"):
-                          raise ValueError("Missing title, character bible or Hindi voiceover.")
+                      if not data.get("topic") or not data.get("title") or not data.get("voiceover"):
+                          raise ValueError("Missing topic, title or Hindi voiceover.")
                       scenes = data.get("scenes")
                       if not isinstance(scenes, list) or len(scenes) != 7:
                           raise ValueError("Expected exactly seven scene prompts.")
