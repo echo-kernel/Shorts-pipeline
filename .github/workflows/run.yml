@@ -321,6 +321,14 @@ jobs:
           print(f"Verified MP4: {video} ({video.stat().st_size / 1024 / 1024:.2f} MB)")
           PY
 
+      - name: Upload final MP4 to GitHub Actions
+        uses: actions/upload-artifact@v4
+        with:
+          name: historical-short-mp4
+          path: kaggle-output/**/historical_short.mp4
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Send completed MP4 to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
