@@ -163,6 +163,26 @@ jobs:
                           config={"response_mime_type": "application/json"}
                       )
                       data = json.loads(response.text.strip())
+                      audit_prompt = (
+                          "You are a strict science and engineering fact-checker. Audit this educational "
+                          "Short for scientific, engineering and physics errors. Check causal steps, force "
+                          "directions, gravity, inertia, friction, lift, thrust, pressure, energy conversion, "
+                          "scale and mechanical movement wherever relevant. Check that visuals depict the "
+                          "narration accurately and that all seven scenes form a physically plausible sequence. "
+                          "Remove or qualify claims you cannot confidently verify. Do not invent numbers, "
+                          "specifications, formulas, dates or mechanisms. Preserve Hindi narration and English "
+                          "scene prompts. Return corrected JSON only, with exactly these keys: topic, title, "
+                          "era_label, character_bible, voiceover, scenes. scenes must contain exactly seven "
+                          "non-empty strings. Draft to audit: "
+                          + json.dumps(data, ensure_ascii=False)
+                      )
+                      audited = client.models.generate_content(
+                          model=model,
+                          contents=audit_prompt,
+                          config={"response_mime_type": "application/json"}
+                      )
+                      data = json.loads(audited.text.strip())
+                      print("Independent science/physics audit completed.")
                       if not isinstance(data, dict):
                           raise ValueError("Response is not a JSON object.")
                       if not data.get("topic") or not data.get("title") or not data.get("voiceover"):
