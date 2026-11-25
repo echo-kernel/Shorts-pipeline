@@ -143,7 +143,7 @@ jobs:
               body={
                   "snippet": {
                       "title": title,
-                      "description": "AI-generated educational explainer Short.\\n\\nCreated with the Shorts-pipeline.",
+                      "description": "AI-generated educational explainer Short.\n\nCreated with the Shorts-pipeline.",
                       "tags": ["Shorts", "Education", "Science", "Technology"],
                       "categoryId": "27"
                   },
@@ -163,7 +163,7 @@ jobs:
           if not video_id:
               raise SystemExit("YouTube did not return a video ID.")
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write("video_id=" + video_id + "\\n")
+              f.write("video_id=" + video_id + "\n")
           print("Uploaded video ID:", video_id)
           PY
 
@@ -180,9 +180,9 @@ jobs:
           import os
           import requests
           video_id = os.environ["YOUTUBE_VIDEO_ID"]
-          message = ("✅ YouTube upload complete!\\n\\n" + os.environ["VIDEO_TITLE"] +
-                     "\\nVisibility: " + os.environ["PRIVACY_STATUS"].upper() +
-                     "\\nhttps://youtu.be/" + video_id)
+          message = ("✅ YouTube upload complete!\n\n" + os.environ["VIDEO_TITLE"] +
+                     "\nVisibility: " + os.environ["PRIVACY_STATUS"].upper() +
+                     "\nhttps://youtu.be/" + video_id)
           response = requests.post(
               "https://api.telegram.org/bot" + os.environ["TELEGRAM_BOT_TOKEN"] + "/sendMessage",
               json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": message},
