@@ -90,17 +90,18 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
         scene_prompt = (
             prompt.strip()
             + ". " + variations[i % len(variations)]
-            + ". Photorealistic live-action educational documentary footage, "
-              "accurate present-day or historical setting as specified by the scene, "
-              "realistic materials, correct engineering geometry and believable scale, "
-              "physically plausible motion governed by real-world forces, gravity, inertia, "
-              "friction, pressure, lift and thrust as appropriate, "
-              "cause-and-effect must be visible and physically coherent, "
-              "no impossible motion, no objects passing through each other, "
-              "no incorrectly assembled machinery, no contradictory moving parts, "
-              "natural lighting, subtle film grain, smooth restrained camera movement. "
-              "Maintain one consistent photorealistic documentary visual language. "
-              "Not 3D animation, not cartoon, not illustration, not fantasy."
+            + ". Hybrid 3D educational animation rendered with premium photorealistic CGI, "
+              "cinematic engineering documentary quality, physically based materials, realistic "
+              "lighting, accurate real-world scale and mechanically correct geometry. "
+              "Show the exact mechanism described in this scene, not generic decorative footage. "
+              "When useful, use a clean transparent cutaway, sectional view or exploded assembly "
+              "to reveal internal components; keep parts correctly connected and in their true positions. "
+              "Animate only the relevant moving parts with clear cause-and-effect, plausible speed, "
+              "gravity, inertia, friction, pressure, lift and thrust as appropriate. "
+              "Use a smooth camera orbit, dolly or tracking move that helps explain the mechanism. "
+              "Maintain consistent object design, proportions, materials and color palette across scenes. "
+              "No generated writing or labels; all explanatory labels are added in editing. "
+              "Not cartoon, not anime, not toy-like, not fantasy."
         )
 
         print(f"Generating clip {i + 1}/{clip_count}...")
@@ -113,10 +114,10 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
             num_inference_steps=20,
             guidance_scale=5.0,
             negative_prompt=(
-                "3D cartoon, stylized animation, animated movie, CGI character, "
-                "plastic skin, toy-like face, illustration, anime, fantasy, impossible physics, "
-                "modern clothing when period setting is requested, impossible motion, broken geometry, " 
-                "incorrect machinery, floating objects, text, letters, subtitles, watermark, logo"
+                "cartoon, anime, low-poly toy appearance, plastic toy materials, fantasy, "
+                "impossible physics, modern objects in historical scenes, impossible motion, "
+                "broken geometry, incorrect machinery, floating objects, duplicated components, "
+                "text, letters, subtitles, watermark, logo, random symbols"
             ),
             generator=torch.Generator("cuda").manual_seed(
                 20261115 + i * 7919
