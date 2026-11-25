@@ -1098,6 +1098,15 @@ async function handleCallback(env, callback) {
 
 export default {
   async scheduled(event, env, ctx) {
+    if (event.cron === "10 18 * * *") {
+      try {
+        if (!env.OWNER_CHAT_ID) throw new Error("OWNER_CHAT_ID is not configured.");
+        await dispatchVideoWorkflow(env, String(env.OWNER_CHAT_ID), "AUTO");
+        console.log("Daily AI explainer request dispatched for 23:40 India time.");
+      } catch (error) {
+        console.error("Daily AI explainer dispatch failed:", String(error));
+      }
+    }
     try {
       const page = await env.QUIZ_STATE.list({ prefix: "quiz:", limit: 100 });
       for (const item of page.keys) {
