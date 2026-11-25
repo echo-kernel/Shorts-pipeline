@@ -25,6 +25,7 @@ on:
         options:
           - public
           - private
+        default: public
       chat_id:
         description: "Telegram chat to notify"
         required: true
