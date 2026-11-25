@@ -4,17 +4,12 @@ import { showYouTubeUploads, handleYouTubeCallback, handleYouTubeMessage, regist
 const TG = "https://api.telegram.org";
 const MAIN_MENU = {
   keyboard: [
-    [{ text: "🎯 Mixed PYQ" }, { text: "🤖 AI Quiz" }],
-    [{ text: "📚 Subjects" }, { text: "📖 Chapter PYQ" }],
-    [{ text: "📅 PYQ by Year" }, { text: "📝 Full Test (75Q)" }],
-    [{ text: "📊 Available Topics" }, { text: "📊 Bank Coverage" }],
-    [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
     [{ text: "🎥 Request New Video" }],
-    [{ text: "📤 YouTube Uploads" }],
-    [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
+    [{ text: "📤 YouTube Uploads" }, { text: "📊 Video Feedback" }],
+    [{ text: "🆘 Help" }]
   ],
   resize_keyboard: true,
-  input_field_placeholder: "Type: Create 20 difficult Physics questions on Rotation"
+  input_field_placeholder: "Tap Request New Video or send /video"
 };
 
 async function telegram(env, method, body) {
@@ -81,20 +76,10 @@ function shuffled(items) {
 
 async function configureTelegramMenu(env, chatId) {
   await telegram(env, "setMyCommands", { commands: [
-    { command: "start", description: "Open the JEE quiz menu" },
-    { command: "sections", description: "Show all quiz sections" },
-    { command: "subjects", description: "Choose Physics, Chemistry or Maths" },
-    { command: "chapters", description: "Browse chapter-wise PYQs" },
-    { command: "years", description: "Choose a PYQ year" },
-    { command: "fullpaper", description: "Open full-paper options" },
-    { command: "coverage", description: "View question-bank coverage" },
-    { command: "progress", description: "View your progress" },
-    { command: "mistakes", description: "Review incorrect answers" },
-    { command: "help", description: "How to use the quiz bot" },
-    { command: "stop", description: "Stop the current quiz" },
-    { command: "video", description: "Generate an educational AI video" },
+    { command: "start", description: "Open the AI Shorts bot" },
+    { command: "video", description: "Request an educational AI video" },
     { command: "feedback", description: "View saved video feedback" },
-    { command: "youtube", description: "Upload a generated video to YouTube" }
+    { command: "youtube", description: "Manage YouTube uploads" }
   ]});
   await telegram(env, "setChatMenuButton", {
     chat_id: chatId,
@@ -762,7 +747,7 @@ async function handleMessage(env, message) {
   const text = raw.toLowerCase().replace(/\s+/g, " ");
   if (text === "/start") {
     await configureTelegramMenu(env, chatId);
-    await showMainMenu(env, chatId, "Welcome! Choose PYQ mode or create a custom AI test.");
+    await showMainMenu(env, chatId, "Welcome to the AI Shorts bot! Request a new educational video, review video feedback, or manage YouTube uploads.");
     return;
   }
   const pendingVideoReport = await env.QUIZ_STATE.get("video-feedback-report:" + chatId, "json");
@@ -798,6 +783,13 @@ async function handleMessage(env, message) {
   }
   if (text === "/sections") return showSections(env, chatId);
   if (text === "/video" || text === "🎬 generate ai video" || text === "🎥 request new video") return askVideoTopic(env, chatId);
+  if (text === "📊 video feedback") return handleMessage(env, { ...message, text: "/feedback" });
+  if (text === "/help" || text === "🆘 help") {
+    return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
+  }
+  if (!raw.startsWith("/")) {
+    return telegram(env, "sendMessage", { chat_id: chatId, text: "This bot now handles AI Shorts only. Tap 🎥 Request New Video or send /video. Use /youtube for uploads and /feedback for video feedback." });
+  }
   if (text === "/subjects") return showSubjects(env, chatId);
   if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
   if (text === "/help" || text === "🆘 help") {
@@ -1106,22 +1098,6 @@ export default {
       } catch (error) {
         console.error("Daily AI explainer dispatch failed:", String(error));
       }
-    }
-    try {
-      const page = await env.QUIZ_STATE.list({ prefix: "quiz:", limit: 100 });
-      for (const item of page.keys) {
-        const chatId = item.name.slice(5);
-        const state = await env.QUIZ_STATE.get(item.name, "json");
-        if (!state) continue;
-        if (state.timed !== false && examClock(state).left <= 0) {
-          await submitQuiz(env, chatId, state);
-        }
-        // Do not re-render the question on every cron tick. Telegram may reject
-        // an edit and the fallback would create duplicate question messages.
-        // The timer is enforced here; navigation refreshes the visible question.
-      }
-    } catch (error) {
-      console.error("Scheduled exam timer failed", String(error));
     }
   },
   async fetch(request, env) {
