@@ -291,8 +291,7 @@ jobs:
         run: |
           kaggle kernels push -p kaggle
 
-      - name: Save submitted topic to rotation history
-        continue-on-error: true
+      - name: Save submitted topic and Kaggle job record
         run: |
           python - <<'PY'
           import json
@@ -302,22 +301,33 @@ jobs:
 
           story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
           topic = story["topic"].strip()
+          now = datetime.now(timezone.utc).isoformat()
           path = Path("used_topics.json")
           data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"topics": []}
           topics = data.get("topics", [])
           topics = [item for item in topics if item.get("topic", "").casefold() != topic.casefold()]
-          topics.append({"topic": topic, "submitted_at": datetime.now(timezone.utc).isoformat()})
-          path.write_text(json.dumps({"topics": topics[-100:]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          topics.append({"topic": topic, "submitted_at": now})
+          path.write_text(json.dumps({"topics": topics[-100:]}, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+
+          job = {
+              "kernel": "apuravjadhav/shorts-pipeline-wan",
+              "topic": topic,
+              "title": story.get("title", ""),
+              "submitted_at": now,
+              "status": "SUBMITTED",
+              "last_notified_status": ""
+          }
+          Path("kaggle_job.json").write_text(json.dumps(job, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
 
           subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
           subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
-          subprocess.run(["git", "add", "used_topics.json"], check=True)
+          subprocess.run(["git", "add", "used_topics.json", "kaggle_job.json"], check=True)
           if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode == 0:
-              print("Topic already recorded.")
+              print("Topic and job record already saved.")
           else:
-              subprocess.run(["git", "commit", "-m", "Reserve submitted explainer topic"], check=True)
+              subprocess.run(["git", "commit", "-m", "Record submitted Kaggle explainer job"], check=True)
               subprocess.run(["git", "push"], check=True)
-              print(f"Reserved submitted topic: {topic}")
+              print(f"Recorded submitted Kaggle job for: {topic}")
           PY
 
       - name: Notify Telegram if submission workflow fails
