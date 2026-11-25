@@ -1,4 +1,5 @@
 import questions from "../data/questions.js";
+import { showYouTubeUploads, handleYouTubeCallback, registerGeneratedVideo } from "./youtube.js";
 
 const TG = "https://api.telegram.org";
 const MAIN_MENU = {
@@ -9,6 +10,7 @@ const MAIN_MENU = {
     [{ text: "📊 Available Topics" }, { text: "📊 Bank Coverage" }],
     [{ text: "📈 My Progress" }, { text: "🧠 Mistake Review" }],
     [{ text: "🎥 Request New Video" }],
+    [{ text: "📤 YouTube Uploads" }],
     [{ text: "🆘 Help" }, { text: "🛑 Stop Quiz" }]
   ],
   resize_keyboard: true,
@@ -91,7 +93,8 @@ async function configureTelegramMenu(env, chatId) {
     { command: "help", description: "How to use the quiz bot" },
     { command: "stop", description: "Stop the current quiz" },
     { command: "video", description: "Generate an educational AI video" },
-    { command: "feedback", description: "View saved video feedback" }
+    { command: "feedback", description: "View saved video feedback" },
+    { command: "youtube", description: "Upload a generated video to YouTube" }
   ]});
   await telegram(env, "setChatMenuButton", {
     chat_id: chatId,
@@ -105,6 +108,7 @@ async function showSections(env, chatId) {
     text: "📚 JEE BOT SECTIONS — choose one:",
     reply_markup: { inline_keyboard: [
       [{ text: "🎥 Request New Video", callback_data: "section:video" }],
+      [{ text: "📤 YouTube Uploads", callback_data: "section:youtube" }],
       [{ text: "🎯 Mixed PYQ", callback_data: "section:mixed" }],
       [{ text: "📚 Subjects", callback_data: "section:subjects" }],
       [{ text: "📖 Chapter PYQ", callback_data: "section:chapters" }],
@@ -778,6 +782,7 @@ async function handleMessage(env, message) {
     });
     return;
   }
+  if (text === "/youtube" || text === "📤 youtube uploads") return showYouTubeUploads(env, chatId);
   if (text === "/feedback") {
     const items = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
     const counts = items.reduce((acc, item) => {
@@ -899,6 +904,7 @@ async function handleCallback(env, callback) {
   const data = String(callback.data || "");
   const parts = data.split(":");
   await telegram(env, "answerCallbackQuery", { callback_query_id: callback.id });
+  if (await handleYouTubeCallback(env, callback)) return;
   if (parts[0] === "video_feedback") {
     const topic = String(callback.message.caption || "").replace(/^🎬.*?ready!?\s*/i, "").slice(0, 180);
     if (parts[1] === "report") {
@@ -925,6 +931,7 @@ async function handleCallback(env, callback) {
   }
   if (parts[0] === "section") {
     if (parts[1] === "video") return askVideoTopic(env, chatId);
+    if (parts[1] === "youtube") return showYouTubeUploads(env, chatId);
     if (parts[1] === "mixed") return askQuestionCount(env, chatId, "mixed", null);
     if (parts[1] === "subjects") return showSubjects(env, chatId);
     if (parts[1] === "chapters" || parts[1] === "topics") return showTopicSubjects(env, chatId);
@@ -1109,6 +1116,20 @@ export default {
     }
   },
   async fetch(request, env) {
+    const requestUrl = new URL(request.url);
+    if (requestUrl.pathname === "/register-video") {
+      if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
+      if (!env.GITHUB_TOKEN || request.headers.get("Authorization") !== "Bearer " + env.GITHUB_TOKEN) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      try {
+        const body = await request.json();
+        await registerGeneratedVideo(env, body);
+        return new Response("OK");
+      } catch (error) {
+        return new Response(String(error?.message || error), { status: 400 });
+      }
+    }
     if (request.method === "GET") return new Response("JEE Main Telegram Quiz Bot is running.");
     if (request.method !== "POST") return new Response("Method not allowed", { status: 405 });
     if (!env.TELEGRAM_TOKEN || !env.TELEGRAM_WEBHOOK_SECRET || !env.QUIZ_STATE) {
