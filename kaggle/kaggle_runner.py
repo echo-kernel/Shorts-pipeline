@@ -110,7 +110,48 @@ shutil.copy2(video, download_video)
 
 print("SUCCESS! Video:", video)
 print("Kaggle output copy:", download_video)
+
 print("Size:", round(video.stat().st_size / 1024**2, 2), "MB")
+
+# 8. Push the completed MP4 to GitHub. A push event starts the YouTube
+# uploader workflow automatically; Telegram is not used as the upload source.
+GITHUB_TOKEN = kaggle_secret("GITHUB_TOKEN")
+if not GITHUB_TOKEN:
+    raise RuntimeError("Missing Kaggle Secret GITHUB_TOKEN. Add a fine-grained token with Contents: Read and write for echo-kernel/Shorts-pipeline.")
+
+import base64
+import re
+from datetime import datetime, timezone
+
+if video.stat().st_size > 95 * 1024 * 1024:
+    raise RuntimeError("MP4 exceeds the safe GitHub Contents API limit (95 MB).")
+
+safe_topic = re.sub(r"[^A-Za-z0-9_-]+", "-", str(json.loads(story_payload).get("topic") or "educational-short")).strip("-")[:55]
+filename = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S") + "-" + (safe_topic or "educational-short") + ".mp4"
+github_path = "videos/" + filename
+with video.open("rb") as handle:
+    encoded_video = base64.b64encode(handle.read()).decode("ascii")
+
+github_response = requests.put(
+    "https://api.github.com/repos/echo-kernel/Shorts-pipeline/contents/" + github_path,
+    headers={
+        "Accept": "application/vnd.github+json",
+        "Authorization": "Bearer " + GITHUB_TOKEN,
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "CurioMotion-Auto-Publisher"
+    },
+    json={
+        "message": "Upload generated video for automatic YouTube publishing",
+        "content": encoded_video,
+        "branch": "jee-telegram-quiz"
+    },
+    timeout=(30, 300)
+)
+if github_response.status_code not in (200, 201):
+    raise RuntimeError("GitHub video transfer failed: HTTP " + str(github_response.status_code) + " " + github_response.text[:700])
+print("GitHub received MP4:", github_path)
+print("GitHub push will trigger automatic public YouTube upload.")
+
 
 # Deliver the finished video directly from Kaggle. GitHub Actions has already exited.
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
