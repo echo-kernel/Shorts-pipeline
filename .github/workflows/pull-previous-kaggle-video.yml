@@ -1,0 +1,52 @@
+name: Pull Previous Video from Kaggle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pull-kaggle-output:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install kaggle
+
+      - name: Download existing Kaggle kernel output
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KAGGLE_API_TOKEN:-}" ]; then
+            echo "Missing GitHub secret KAGGLE_API_TOKEN."
+            exit 1
+          fi
+          mkdir -p ./out
+          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p ./out
+          echo "Downloaded Kaggle output files:"
+          find ./out -type f -printf '%p (%s bytes)\n'
+
+      - name: Check for previously generated MP4
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          videos = [p for p in Path("out").rglob("*.mp4") if p.is_file()]
+          if not videos:
+              raise SystemExit("No MP4 found in the saved Kaggle kernel output. Kaggle may not have saved the previous run's video as notebook output.")
+          for video in videos:
+              print(f"Found: {video} ({video.stat().st_size} bytes)")
+              if video.stat().st_size < 10000:
+                  raise SystemExit(f"Video is unexpectedly small: {video}")
+          PY
+
+      - name: Make previous video available to download
+        uses: actions/upload-artifact@v4
+        with:
+          name: previous-kaggle-video
+          path: out/**/*.mp4
+          if-no-files-found: error
+          retention-days: 7
