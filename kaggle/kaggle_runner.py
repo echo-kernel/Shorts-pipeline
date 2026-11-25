@@ -171,9 +171,9 @@ keyboard = {
     ]
 }
 message = (
-    "🎬 Video generated successfully!\\n\\n"
-    "Topic: " + topic + "\\n"
-    "Title: " + title + "\\n\\n"
+    "🎬 Video generated successfully!\n\n"
+    "Topic: " + topic + "\n"
+    "Title: " + title + "\n\n"
     "The MP4 has been sent to GitHub for automatic YouTube publishing. "
     "I will send another message when YouTube upload finishes."
 )
