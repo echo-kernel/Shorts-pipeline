@@ -75,3 +75,25 @@ Use the [official JEE Main website](https://jeemain.nta.nic.in/) and NTA's offic
 ## Deployment
 
 Run **Actions → Deploy JEE Telegram Quiz Bot → Run workflow** on branch `jee-telegram-quiz`.
+
+
+## YouTube uploads
+
+The same Telegram bot can upload a newly generated Short or select one of the previous generated videos.
+
+- Each new video message includes **YouTube upload options**.
+- Use `/youtube` or **📤 YouTube Uploads** to select a previous generated video.
+- Choose **Public**, **Private**, or **Don't Publish** before any upload starts.
+- Generated MP4 artifacts are retained by GitHub Actions for 7 days. Previous-video selection therefore works for 7 days after generation.
+
+### One-time YouTube connection
+
+Create a Google OAuth client for the YouTube Data API v3 and obtain an OAuth refresh token with the `https://www.googleapis.com/auth/youtube.upload` scope. Add these repository Actions secrets:
+
+- `YOUTUBE_CLIENT_ID`
+- `YOUTUBE_CLIENT_SECRET`
+- `YOUTUBE_REFRESH_TOKEN`
+
+Also keep the existing `VIDEO_GITHUB_TOKEN` secret configured. It must be a fine-grained or classic token that can dispatch repository workflows and read Actions artifacts. The existing Cloudflare secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are used to register completed videos in the bot's history.
+
+YouTube upload runs in a separate GitHub Actions workflow, not inside the Cloudflare Worker. This avoids trying to transfer large MP4 files through Telegram or the Worker. The selected privacy setting is applied when the video is uploaded; **Public** publishes immediately, while **Private** stays private. **Don't Publish** cancels without uploading.
