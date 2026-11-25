@@ -1,0 +1,134 @@
+name: Monitor Kaggle Video Job
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: curiomotion-kaggle-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Check out active pipeline branch and job record
+        uses: actions/checkout@v4
+        with:
+          ref: jee-telegram-quiz
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install kaggle requests
+
+      - name: Check Kaggle status and notify Telegram
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from datetime import datetime, timezone, timedelta
+          from pathlib import Path
+          import requests
+
+          record_path = Path("kaggle_job.json")
+          if not record_path.exists():
+              print("No submitted Kaggle job record yet; nothing to monitor.")
+              raise SystemExit(0)
+
+          job = json.loads(record_path.read_text(encoding="utf-8"))
+          terminal = {"COMPLETE", "ERROR", "FAILED", "CANCELLED"}
+          if job.get("status") in terminal:
+              print("Last Kaggle job is terminal:", job["status"])
+              raise SystemExit(0)
+
+          kernel = job.get("kernel", "apuravjadhav/shorts-pipeline-wan")
+          result = subprocess.run(
+              ["kaggle", "kernels", "status", kernel],
+              text=True, capture_output=True, timeout=90
+          )
+          output = (result.stdout + "\n" + result.stderr).strip()
+          print("Kaggle status response:", output[:1500])
+          if result.returncode != 0:
+              print("Status lookup failed; next scheduled check will retry.")
+              raise SystemExit(0)
+
+          upper = output.upper()
+          if "QUEUED" in upper:
+              status = "QUEUED"
+          elif "RUNNING" in upper:
+              status = "RUNNING"
+          elif "COMPLETE" in upper:
+              status = "COMPLETE"
+          elif "ERROR" in upper or "FAILED" in upper:
+              status = "ERROR"
+          elif "CANCEL" in upper:
+              status = "CANCELLED"
+          else:
+              print("Unrecognized Kaggle status; keeping previous record.")
+              raise SystemExit(0)
+
+          now = datetime.now(timezone.utc)
+          previous = job.get("status", "SUBMITTED")
+          submitted = datetime.fromisoformat(job["submitted_at"].replace("Z", "+00:00"))
+          age = now - submitted
+          messages = []
+          if status in terminal and job.get("last_notified_status") != status:
+              if status == "COMPLETE":
+                  messages.append("✅ Kaggle reports the CurioMotion video job is complete. The notebook should have sent the video to GitHub and Telegram.")
+              else:
+                  messages.append("❌ Kaggle reports the CurioMotion video job ended with status: " + status + ". Topic: " + str(job.get("topic", "Unknown")) + ". Check the Kaggle notebook logs.")
+              job["last_notified_status"] = status
+          elif status == "RUNNING" and previous != "RUNNING" and job.get("last_notified_status") != "RUNNING":
+              messages.append("🎬 CurioMotion video generation has started on Kaggle. Topic: " + str(job.get("topic", "Unknown")))
+              job["last_notified_status"] = "RUNNING"
+          elif status == "QUEUED" and age >= timedelta(minutes=20):
+              last_notice = job.get("last_queue_notice_at")
+              due = True
+              if last_notice:
+                  try:
+                      due = now - datetime.fromisoformat(last_notice.replace("Z", "+00:00")) >= timedelta(minutes=30)
+                  except Exception:
+                      due = True
+              if due:
+                  minutes = int(age.total_seconds() // 60)
+                  messages.append("⏳ CurioMotion is still queued by Kaggle after " + str(minutes) + " minutes. The GitHub runner is not waiting; Kaggle will continue independently. Topic: " + str(job.get("topic", "Unknown")))
+                  job["last_queue_notice_at"] = now.isoformat()
+
+          changed = status != previous or bool(messages)
+          job["status"] = status
+          job["last_checked_at"] = now.isoformat()
+          if changed:
+              record_path.write_text(json.dumps(job, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+              subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+              subprocess.run(["git", "config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], check=True)
+              subprocess.run(["git", "add", "kaggle_job.json"], check=True)
+              if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode != 0:
+                  subprocess.run(["git", "commit", "-m", "Update Kaggle job monitor status"], check=True)
+                  subprocess.run(["git", "push", "origin", "HEAD:jee-telegram-quiz"], check=True)
+
+          token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+          chat = os.getenv("TELEGRAM_CHAT_ID", "")
+          for message in messages:
+              if token and chat:
+                  response = requests.post(
+                      "https://api.telegram.org/bot" + token + "/sendMessage",
+                      data={"chat_id": chat, "text": message},
+                      timeout=20
+                  )
+                  response.raise_for_status()
+              else:
+                  print("Telegram notification skipped: bot token or chat ID is missing.")
+          print("Monitor result:", status)
+          PY
