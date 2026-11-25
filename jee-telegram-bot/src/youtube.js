@@ -31,8 +31,8 @@ export async function showYouTubeUploads(env, chatId) {
   return telegram(env, "sendMessage", {
     chat_id: chatId,
     text: recent.length
-      ? "📁 PREVIOUS GENERATED VIDEOS\nChoose a saved video, or forward an older MP4 below. Generated videos remain available for 7 days:"
-      : "📁 No recent generated videos are saved yet. You can forward an older video here:",
+      ? "📁 PREVIOUS GENERATED VIDEOS\nTap the YouTube options button on a video in this chat, or forward an older MP4 below:"
+      : "📁 Recent generated videos are sent directly to this chat. Tap their YouTube options button, or forward an older video here:",
     reply_markup: { inline_keyboard: rows }
   });
 }
@@ -42,6 +42,32 @@ export async function handleYouTubeCallback(env, callback) {
   const chatId = callback.message?.chat?.id;
   if (data.startsWith("yt") && !isYouTubeOwner(env, chatId)) {
     await telegram(env, "sendMessage", { chat_id: chatId, text: "YouTube uploads are available only to the bot owner." });
+    return true;
+  }
+  if (data === "ytcurrent") {
+    const file = callback.message?.video ||
+      (callback.message?.document && String(callback.message.document.mime_type || "").startsWith("video/")
+        ? callback.message.document : null);
+    if (!file) {
+      await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't read the video attached to that message. Please forward it using /youtube." });
+      return true;
+    }
+    const uploadId = String(Date.now());
+    const title = String(callback.message.caption || "AI Educational Short").replace(/^🎬\\s*/, "").slice(0, 100);
+    await env.QUIZ_STATE.put("youtube-file:" + chatId + ":" + uploadId, JSON.stringify({
+      file_id: file.file_id,
+      file_size: Number(file.file_size || 0),
+      title
+    }), { expirationTtl: 900 });
+    await telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "📤 YouTube upload\\n\\n" + title + "\\n\\nChoose visibility:",
+      reply_markup: { inline_keyboard: [
+        [{ text: "🌍 Publish Public", callback_data: "ytfile:" + uploadId + ":public" }],
+        [{ text: "🔒 Upload Private", callback_data: "ytfile:" + uploadId + ":private" }],
+        [{ text: "🚫 Don't Publish", callback_data: "ytfile:" + uploadId + ":cancel" }]
+      ]}
+    });
     return true;
   }
   if (data === "ytforward") {
