@@ -1,5 +1,6 @@
 import gc
 import math
+import random
 import subprocess
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
                 "text, letters, subtitles, watermark, logo, random symbols"
             ),
             generator=torch.Generator("cuda").manual_seed(
-                20261115 + i * 7919
+                random.SystemRandom().randrange(0, 2**31 - 1)
             )
         )
 
