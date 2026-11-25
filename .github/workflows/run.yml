@@ -145,12 +145,17 @@ jobs:
           - If a detail is uncertain, omit it or describe it cautiously instead of guessing.
           - Do not simplify an explanation so far that it becomes scientifically false.
           - Make all seven scenes a connected, step-by-step explanation in the correct causal order.
-          - Each scene must visually demonstrate the exact narration point; no generic filler.
-          - Use photorealistic live-action documentary visuals, NOT 3D animation, CGI or cartoon.
-          - Maintain one consistent visual style, natural lighting, film texture and color grade.
-          - Use realistic materials, scale, physics, movement and engineering details.
-          - Video-generation visuals can hallucinate: describe simple, physically plausible actions,
-            avoid complex simultaneous motion, and never rely on generated text or labels to explain science.
+          - Structure scenes as a visual lesson: establish the whole object, reveal key components, show the mechanism operating,
+            explain cause-and-effect, show the result, then recap the complete process.
+          - Each scene must visually demonstrate the exact narration point; no generic filler or unrelated repeated shots.
+          - For machinery, specify which component moves, what causes it to move, and what the viewer should observe.
+          - Use clean cutaways and exploded assemblies only when they improve understanding; preserve believable engineering relationships.
+          - Use HYBRID 3D educational animation: premium photorealistic CGI combined with cinematic documentary camera language.
+          - Show real mechanisms clearly using exterior shots, internal cutaways, transparent sections and exploded views when useful.
+          - Maintain consistent object geometry, proportions, materials, colors and component placement across all seven scenes.
+          - Use physically based materials, realistic lighting, accurate scale, mechanically correct parts and plausible motion.
+          - Video-generation visuals can hallucinate: describe one simple, visible action per clip, avoid complex simultaneous motion,
+            and never rely on generated text, labels, arrows or symbols to explain science; overlays are added during editing.
           - Perform a separate fact-check pass: identify inaccurate claims, missing causal steps and
             visuals that contradict the narration; revise them before returning JSON.
           - No random letters, punctuation, labels, captions, logos, watermarks or readable text
