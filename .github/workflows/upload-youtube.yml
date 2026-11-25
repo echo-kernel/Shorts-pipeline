@@ -146,8 +146,8 @@ jobs:
           if not title or title.startswith("Upload generated video "):
               title = video.stem.replace("_", " ").replace("-", " ")[:100] or "AI Educational Short"
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
-              f.write("video_title=" + title.replace("\\n", " ") + "\\n")
-              f.write("privacy_status=" + privacy + "\\n")
+              f.write("video_title=" + title.replace(chr(10), " ") + chr(10))
+              f.write("privacy_status=" + privacy + chr(10))
 
           credentials = Credentials(
               token=None,
