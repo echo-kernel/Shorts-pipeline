@@ -40,7 +40,8 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
+PRIMARY_TTS_VOICE = "hi-IN-KunalNeural"
+FALLBACK_TTS_VOICE = "hi-IN-MadhurNeural"
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
@@ -366,11 +367,11 @@ Requirements:
     )
 
 
-async def create_voice(text, filename):
+async def create_voice(text, filename, voice):
     communicate = edge_tts.Communicate(
         text=text,
-        voice=VOICE,
-        rate="-5%",
+        voice=voice,
+        rate="-3%",
         volume="+0%"
     )
 
@@ -379,15 +380,67 @@ async def create_voice(text, filename):
 
 def generate_voice(text):
     voice_file = WORK_DIR / "narration.mp3"
+    voice_errors = []
 
-    asyncio.run(
-        create_voice(text, voice_file)
+    # Try Kunal first. If Edge TTS fails or returns an empty file,
+    # retry Kunal once, then automatically switch to Madhur.
+    for voice in (PRIMARY_TTS_VOICE, FALLBACK_TTS_VOICE):
+        for attempt in range(1, 3):
+            try:
+                if voice_file.exists():
+                    voice_file.unlink()
+
+                print(
+                    f"Generating Hindi narration with {voice} "
+                    f"(attempt {attempt}/2)"
+                )
+
+                asyncio.run(
+                    create_voice(text, voice_file, voice)
+                )
+
+                if not voice_file.exists() or voice_file.stat().st_size < 1000:
+                    raise RuntimeError(
+                        f"{voice} returned no usable audio."
+                    )
+
+                print(f"Voice generation successful: {voice}")
+                return voice_file
+
+            except Exception as exc:
+                error = f"{voice} attempt {attempt}: {type(exc).__name__}: {exc}"
+                voice_errors.append(error)
+                print(f"⚠️ {error}")
+                tracker.retries += 1
+
+                if voice == PRIMARY_TTS_VOICE and attempt == 1:
+                    tracker.update(
+                        18,
+                        "Retrying Hindi narration",
+                        f"{voice} failed. Retrying once before fallback."
+                    )
+                    time.sleep(3)
+
+                elif voice == PRIMARY_TTS_VOICE and attempt == 2:
+                    tracker.update(
+                        18,
+                        "Switching Hindi voice",
+                        f"{voice} failed twice. Trying {FALLBACK_TTS_VOICE}."
+                    )
+                    time.sleep(2)
+
+                elif attempt == 1:
+                    tracker.update(
+                        18,
+                        "Retrying fallback Hindi voice",
+                        f"{voice} failed. Retrying once."
+                    )
+                    time.sleep(3)
+
+    raise RuntimeError(
+        "Hindi narration failed with both Kunal and Madhur. "
+        + " | ".join(voice_errors)
     )
-
-    if not voice_file.exists() or voice_file.stat().st_size < 1000:
-        raise RuntimeError("Voice generation failed.")
-
-    return voice_file
 
 
 def make_srt(text, duration, filename):
