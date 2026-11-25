@@ -443,6 +443,54 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Register generated video in Telegram history
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          VIDEO_RUN_ID: ${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import requests
+
+          required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "VIDEO_GITHUB_TOKEN"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              print("Video history registration skipped; missing: " + ", ".join(missing))
+              raise SystemExit(0)
+
+          account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
+          headers = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"]}
+          response = requests.get(
+              "https://api.cloudflare.com/client/v4/accounts/" + account + "/workers/subdomain",
+              headers=headers, timeout=20
+          )
+          response.raise_for_status()
+          subdomain = response.json().get("result", {}).get("subdomain")
+          if not subdomain:
+              print("Cloudflare workers.dev subdomain unavailable; skipping video history registration.")
+              raise SystemExit(0)
+
+          with open("kaggle/story.json", encoding="utf-8") as handle:
+              story = json.load(handle)
+          worker_url = "https://jee-telegram-quiz." + subdomain + ".workers.dev/register-video"
+          response = requests.post(
+              worker_url,
+              headers={"Authorization": "Bearer " + os.environ["VIDEO_GITHUB_TOKEN"]},
+              json={
+                  "run_id": os.environ["VIDEO_RUN_ID"],
+                  "chat_id": os.environ["TELEGRAM_CHAT_ID"],
+                  "title": story.get("title") or story.get("topic") or "AI Educational Short"
+              },
+              timeout=20
+          )
+          response.raise_for_status()
+          print("Generated video registered in Telegram history.")
+          PY
+
       - name: Send completed MP4 to Telegram
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -465,7 +513,7 @@ jobs:
                   data={
                       "chat_id": chat,
                       "caption": "🎬 Your AI educational explainer Short is ready!\n" + json.loads(Path("kaggle/story.json").read_text(encoding="utf-8")).get("topic", ""),
-                      "reply_markup": json.dumps({"inline_keyboard": [[{"text": "👍 Good video", "callback_data": "video_feedback:good"}, {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}], [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]]}, ensure_ascii=False)
+                      "reply_markup": json.dumps({"inline_keyboard": [[{"text": "👍 Good video", "callback_data": "video_feedback:good"}, {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}], [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}], [{"text": "📤 YouTube upload options", "callback_data": "ytpick:${{ github.run_id }}"}]]}, ensure_ascii=False)
                   },
                   files={"video": ("historical_short.mp4", handle, "video/mp4")},
                   timeout=(30, 600)
