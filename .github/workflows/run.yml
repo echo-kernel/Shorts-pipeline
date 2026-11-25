@@ -58,9 +58,12 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
         run: |
           set -e
-          for name in GEMINI_API_KEY KAGGLE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+          for name in GEMINI_API_KEY KAGGLE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID VIDEO_GITHUB_TOKEN; do
             value="${!name}"
             if [ -z "$value" ]; then
               echo "Required GitHub Actions secret/input is missing: $name"
@@ -459,8 +462,7 @@ jobs:
           required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "VIDEO_GITHUB_TOKEN"]
           missing = [key for key in required if not os.getenv(key)]
           if missing:
-              print("Video history registration skipped; missing: " + ", ".join(missing))
-              raise SystemExit(0)
+              raise SystemExit("Cannot register this video in Telegram history; missing: " + ", ".join(missing))
 
           account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
           headers = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"]}
