@@ -86,7 +86,7 @@ export async function handleYouTubeCallback(env, callback) {
       await telegram(env, "sendMessage", { chat_id: chatId, text: "I couldn't read the video attached to that message. Please forward it using /youtube." });
       return true;
     }
-    const title = String(callback.message.caption || "AI Educational Short").replace(/^🎬\\s*/, "").slice(0, 100);
+    const title = String(callback.message.caption || "AI Educational Short").replace(/^🎬\s*/, "").slice(0, 100);
     if (Number(file.file_size || 0) > 20 * 1024 * 1024) {
       await telegram(env, "sendMessage", { chat_id: chatId, text: "This video is larger than Telegram's 20 MB Bot API download limit. Choose it from saved generated videos instead." });
       return true;
@@ -126,7 +126,7 @@ export async function handleYouTubeMessage(env, message) {
   const file = message.video || (message.document && String(message.document.mime_type || "").startsWith("video/") ? message.document : null);
   if (!file) return false;
   await env.QUIZ_STATE.delete("youtube-waiting-video:" + chatId);
-  const title = String(message.caption || "Previously generated AI Short").replace(/^🎬\\s*/, "").slice(0, 100);
+  const title = String(message.caption || "Previously generated AI Short").replace(/^🎬\s*/, "").slice(0, 100);
   if (Number(file.file_size || 0) > 20 * 1024 * 1024) {
     await telegram(env, "sendMessage", { chat_id: chatId, text: "This video is larger than Telegram's 20 MB Bot API download limit. Choose a saved generated video from the last 7 days instead." });
     return true;
