@@ -170,10 +170,10 @@ jobs:
               + [word for word in topic_words if len(word) > 2]
           ))[:20]
           description = (
-              f"{title}\\n\\n"
-              "Explore • Learn • Be Amazed.\\n\\n"
+              f"{title}\n\n"
+              "Explore • Learn • Be Amazed.\n\n"
               f"In this CurioMotion explainer, discover the science, engineering and mechanisms behind {title.rstrip('?!.')}. "
-              "A concise educational explanation with visuals and Hindi narration.\\n\\n"
+              "A concise educational explanation with visuals and Hindi narration.\n\n"
               "#Shorts #CurioMotion #Education #Science #HowItWorks"
           )
 
