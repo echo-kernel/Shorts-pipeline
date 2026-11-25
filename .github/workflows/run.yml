@@ -246,6 +246,8 @@ jobs:
           PY
 
       - name: Inject story into the private Kaggle kernel source
+        env:
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import json
@@ -256,7 +258,8 @@ jobs:
           anchor = 'REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"'
           story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
           payload = json.dumps(story, ensure_ascii=False, separators=(",", ":"))
-          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\n" + anchor
+          chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\nVIDEO_CHAT_ID = " + repr(chat_id) + "\n" + anchor
 
           if anchor not in source:
               raise SystemExit("Runner insertion point not found; refusing to submit.")
@@ -271,148 +274,8 @@ jobs:
         run: |
           kaggle kernels push -p kaggle
 
-      - name: Diagnose Kaggle queue and wait for video
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python - <<'PY'
-          import os
-          import subprocess
-          import time
-          import requests
-          from datetime import datetime, timezone
-
-          kernel = "apuravjadhav/shorts-pipeline-wan"
-          started = time.time()
-          deadline = started + 5 * 60 * 60
-          last_status = None
-          last_log_check = 0
-          notified_thresholds = set()
-
-          def telegram(message):
-              try:
-                  response = requests.post(
-                      f"https://api.telegram.org/bot{os.environ['TELEGRAM_BOT_TOKEN']}/sendMessage",
-                      data={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": message},
-                      timeout=20
-                  )
-                  response.raise_for_status()
-                  print("Telegram diagnostic notification sent.")
-              except Exception as exc:
-                  print(f"Telegram notification failed: {type(exc).__name__}: {exc}")
-
-          while time.time() < deadline:
-              now = datetime.now(timezone.utc).isoformat()
-              result = subprocess.run(
-                  ["kaggle", "kernels", "status", kernel],
-                  text=True, capture_output=True
-              )
-              status_text = (result.stdout + "\\n" + result.stderr).strip()
-              elapsed = int(time.time() - started)
-              print(f"\\n[{now}] elapsed={elapsed}s status_exit={result.returncode}")
-              print(status_text or "(Kaggle returned no status text)")
-
-              if result.returncode != 0:
-                  print("DIAGNOSIS: Kaggle status API/CLI call failed; this is not evidence of a GPU queue.")
-                  raise SystemExit("Could not read Kaggle kernel status.")
-
-              normalized = status_text.lower()
-              if normalized != last_status:
-                  print(f"STATUS CHANGE: {last_status!r} -> {normalized!r}")
-                  last_status = normalized
-                  if "running" in normalized:
-                      telegram("🚀 Kaggle has started running your AI Short. GPU execution is now underway.")
-                  elif "queued" in normalized:
-                      telegram("⏳ Kaggle accepted your notebook but it is QUEUED. Kaggle's status API does not reveal the exact internal queue reason; this usually means a worker/GPU is not yet available. I am collecting periodic diagnostics.")
-              
-              if "complete" in normalized:
-                  print("Kaggle kernel completed.")
-                  raise SystemExit(0)
-              if "error" in normalized or "cancel" in normalized:
-                  print("DIAGNOSIS: Kaggle reports an unsuccessful terminal state. Fetching logs in the next diagnostics step.")
-                  raise SystemExit("Kaggle kernel ended unsuccessfully. Check the uploaded diagnostics artifact.")
-
-              # Kaggle exposes status and logs, but not its internal scheduler reason.
-              # Capture logs periodically so any startup/runtime failure is visible as soon as logs exist.
-              if time.time() - last_log_check >= 300:
-                  logs = subprocess.run(
-                      ["kaggle", "kernels", "logs", kernel],
-                      text=True, capture_output=True
-                  )
-                  log_text = (logs.stdout + "\\n" + logs.stderr).strip()
-                  print("===== PERIODIC KAGGLE LOG CHECK =====")
-                  if log_text:
-                      print(log_text[-12000:])
-                  else:
-                      print("No execution log available yet. If status remains QUEUED, notebook code has probably not started.")
-                  last_log_check = time.time()
-
-              # Escalating queue alerts; these are elapsed-time warnings, not fabricated root causes.
-              for minutes in (15, 30, 60, 120):
-                  if elapsed >= minutes * 60 and minutes not in notified_thresholds and "queued" in normalized:
-                      notified_thresholds.add(minutes)
-                      note = (
-                          f"⏳ Kaggle is still QUEUED after {minutes} minutes. "
-                          "The Kaggle API does not expose the scheduler's exact reason. "
-                          "No notebook execution logs means the code has not visibly started; "
-                          "the likely issue is Kaggle worker/GPU capacity or scheduling. "
-                          "See GitHub Actions logs for timestamped status and log checks."
-                      )
-                      print("QUEUE DIAGNOSIS: " + note)
-                      telegram(note)
-
-              time.sleep(60)
-
-          raise SystemExit("Timed out after 5 hours waiting for Kaggle. See periodic status/log diagnostics.")
-          PY
-
-      - name: Collect Kaggle status and execution logs
-        if: always()
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-        run: |
-          mkdir -p kaggle-diagnostics
-          kaggle kernels status apuravjadhav/shorts-pipeline-wan > kaggle-diagnostics/status.txt 2>&1 || true
-          kaggle kernels logs apuravjadhav/shorts-pipeline-wan > kaggle-diagnostics/kernel.log 2>&1 || true
-          echo "===== KAGGLE KERNEL STATUS ====="
-          cat kaggle-diagnostics/status.txt
-          echo "===== LAST 250 LINES OF KAGGLE LOG ====="
-          if [ -s kaggle-diagnostics/kernel.log ]; then
-            tail -n 250 kaggle-diagnostics/kernel.log
-          else
-            echo "Kaggle has not made execution logs available yet."
-          fi
-
-      - name: Upload Kaggle diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: kaggle-diagnostics
-          path: kaggle-diagnostics/
-          if-no-files-found: ignore
-          retention-days: 7
-
-      - name: Download and verify final MP4
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-        run: |
-          set -e
-          mkdir -p kaggle-output
-          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p kaggle-output -o
-          python - <<'PY'
-          from pathlib import Path
-          videos = list(Path("kaggle-output").rglob("historical_short.mp4"))
-          if not videos:
-              raise SystemExit("Kaggle completed but historical_short.mp4 was not found in kernel output.")
-          video = max(videos, key=lambda p: p.stat().st_size)
-          if video.stat().st_size < 10000:
-              raise SystemExit("Downloaded MP4 is unexpectedly small.")
-          print(f"Verified MP4: {video} ({video.stat().st_size / 1024 / 1024:.2f} MB)")
-          PY
-
-      - name: Save completed topic to rotation history
+      - name: Save submitted topic to rotation history
+        continue-on-error: true
         run: |
           python - <<'PY'
           import json
@@ -426,7 +289,7 @@ jobs:
           data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"topics": []}
           topics = data.get("topics", [])
           topics = [item for item in topics if item.get("topic", "").casefold() != topic.casefold()]
-          topics.append({"topic": topic, "completed_at": datetime.now(timezone.utc).isoformat()})
+          topics.append({"topic": topic, "submitted_at": datetime.now(timezone.utc).isoformat()})
           path.write_text(json.dumps({"topics": topics[-100:]}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
           subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
@@ -435,103 +298,12 @@ jobs:
           if subprocess.run(["git", "diff", "--cached", "--quiet"]).returncode == 0:
               print("Topic already recorded.")
           else:
-              subprocess.run(["git", "commit", "-m", "Record completed explainer topic"], check=True)
+              subprocess.run(["git", "commit", "-m", "Reserve submitted explainer topic"], check=True)
               subprocess.run(["git", "push"], check=True)
-              print(f"Recorded completed topic: {topic}")
+              print(f"Reserved submitted topic: {topic}")
           PY
 
-      - name: Upload final MP4 to GitHub Actions
-        uses: actions/upload-artifact@v4
-        with:
-          name: historical-short-mp4
-          path: kaggle-output/**/historical_short.mp4
-          if-no-files-found: error
-          retention-days: 7
-
-      - name: Register generated video in Telegram history
-        continue-on-error: true
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
-          VIDEO_RUN_ID: ${{ github.run_id }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import requests
-
-          required = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "VIDEO_GITHUB_TOKEN"]
-          missing = [key for key in required if not os.getenv(key)]
-          if missing:
-              print("Previous-video menu registration skipped; optional YouTube history secrets are missing: " + ", ".join(missing))
-              raise SystemExit(0)
-
-          account = os.environ["CLOUDFLARE_ACCOUNT_ID"]
-          headers = {"Authorization": "Bearer " + os.environ["CLOUDFLARE_API_TOKEN"]}
-          response = requests.get(
-              "https://api.cloudflare.com/client/v4/accounts/" + account + "/workers/subdomain",
-              headers=headers, timeout=20
-          )
-          response.raise_for_status()
-          subdomain = response.json().get("result", {}).get("subdomain")
-          if not subdomain:
-              print("Cloudflare workers.dev subdomain unavailable; skipping video history registration.")
-              raise SystemExit(0)
-
-          with open("kaggle/story.json", encoding="utf-8") as handle:
-              story = json.load(handle)
-          worker_url = "https://jee-telegram-quiz." + subdomain + ".workers.dev/register-video"
-          response = requests.post(
-              worker_url,
-              headers={"Authorization": "Bearer " + os.environ["VIDEO_GITHUB_TOKEN"]},
-              json={
-                  "run_id": os.environ["VIDEO_RUN_ID"],
-                  "chat_id": os.environ["TELEGRAM_CHAT_ID"],
-                  "title": story.get("title") or story.get("topic") or "AI Educational Short"
-              },
-              timeout=20
-          )
-          response.raise_for_status()
-          print("Generated video registered in Telegram history.")
-          PY
-
-      - name: Send completed MP4 to Telegram
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python - <<'PY'
-          import os
-          import json
-          from pathlib import Path
-          import requests
-
-          videos = list(Path("kaggle-output").rglob("historical_short.mp4"))
-          video = max(videos, key=lambda p: p.stat().st_size)
-          token = os.environ["TELEGRAM_BOT_TOKEN"]
-          chat = os.environ["TELEGRAM_CHAT_ID"]
-
-          with video.open("rb") as handle:
-              response = requests.post(
-                  f"https://api.telegram.org/bot{token}/sendVideo",
-                  data={
-                      "chat_id": chat,
-                      "caption": "🎬 Your AI educational explainer Short is ready!\n" + json.loads(Path("kaggle/story.json").read_text(encoding="utf-8")).get("topic", ""),
-                      "reply_markup": json.dumps({"inline_keyboard": [[{"text": "👍 Good video", "callback_data": "video_feedback:good"}, {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}], [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}], [{"text": "📤 YouTube upload options", "callback_data": "ytpick:${{ github.run_id }}"}]]}, ensure_ascii=False)
-                  },
-                  files={"video": ("historical_short.mp4", handle, "video/mp4")},
-                  timeout=(30, 600)
-              )
-          response.raise_for_status()
-          result = response.json()
-          if not result.get("ok"):
-              raise SystemExit(f"Telegram rejected the video: {result}")
-          print("Final MP4 sent to Telegram.")
-          PY
-
-      - name: Notify Telegram if the workflow fails
+      - name: Notify Telegram if submission workflow fails
         if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -540,16 +312,15 @@ jobs:
           python - <<'PY'
           import os
           import requests
-
           token = os.getenv("TELEGRAM_BOT_TOKEN")
           chat = os.getenv("TELEGRAM_CHAT_ID")
           if token and chat:
-              requests.post(
-                  f"https://api.telegram.org/bot{token}/sendMessage",
-                  data={
-                      "chat_id": chat,
-                      "text": "❌ AI Explainer Shorts failed. Check the GitHub Actions run and Kaggle kernel logs for the exact error."
-                  },
-                  timeout=20
-              ).raise_for_status()
+              try:
+                  requests.post(
+                      f"https://api.telegram.org/bot{token}/sendMessage",
+                      data={"chat_id": chat, "text": "❌ AI Explainer Shorts could not be submitted to Kaggle. Check the GitHub Actions run for the exact setup or submission error."},
+                      timeout=20
+                  ).raise_for_status()
+              except Exception as exc:
+                  print("Telegram failure notification failed:", type(exc).__name__, str(exc))
           PY
