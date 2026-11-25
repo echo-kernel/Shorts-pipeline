@@ -352,7 +352,7 @@ jobs:
                   capture_output=True,
                   text=True
               )
-              output = (result.stdout + "\\n" + result.stderr).strip()
+              output = (result.stdout + "\n" + result.stderr).strip()
               print(output or f"Kaggle status command exited with code {result.returncode}")
 
               if result.returncode != 0:
@@ -364,7 +364,7 @@ jobs:
                   continue
 
               transient_failures = 0
-              match = re.search(r"KernelWorkerStatus\\.([A-Z_]+)", output)
+              match = re.search(r"KernelWorkerStatus\.([A-Z_]+)", output)
               status = match.group(1) if match else ""
 
               if status == "COMPLETE":
