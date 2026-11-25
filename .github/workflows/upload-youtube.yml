@@ -56,8 +56,262 @@ jobs:
       - name: Prepare automatically generated video
         if: github.event_name == 'push'
         run: |
+          set -euo pipefail
           mkdir -p youtube-upload
-          cp videos/*.mp4 youtube-upload/
+          VIDEO_PATH="$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^videos/.*\\.mp4
+      - name: Download selected generated video artifact
+        if: inputs.source == 'artifact'
+        uses: actions/download-artifact@v4
+        with:
+          name: historical-short-mp4
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ secrets.VIDEO_GITHUB_TOKEN }}
+          path: youtube-upload
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download forwarded Telegram video
+        if: inputs.source == 'telegram'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_FILE_ID: ${{ inputs.file_id }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import requests
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          file_id = os.environ["TELEGRAM_FILE_ID"]
+          if not file_id:
+              raise SystemExit("Telegram file ID is missing.")
+          api = "https://api.telegram.org/bot" + token
+          info = requests.get(api + "/getFile", params={"file_id": file_id}, timeout=20)
+          info.raise_for_status()
+          data = info.json()
+          if not data.get("ok"):
+              raise SystemExit("Telegram getFile failed: " + str(data))
+          file_path = data["result"]["file_path"]
+          size = int(data["result"].get("file_size", 0))
+          if size > 20 * 1024 * 1024:
+              raise SystemExit("Telegram Bot API file download limit is 20 MB.")
+          download = requests.get("https://api.telegram.org/file/bot" + token + "/" + file_path, timeout=120)
+          download.raise_for_status()
+          Path("youtube-upload").mkdir(parents=True, exist_ok=True)
+          Path("youtube-upload/forwarded-video.mp4").write_bytes(download.content)
+          print("Downloaded forwarded video:", len(download.content), "bytes")
+          PY
+
+      - name: Install YouTube upload dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install google-api-python-client google-auth google-auth-httplib2 requests Pillow
+
+      - name: Upload video to YouTube
+        id: youtube
+        env:
+          YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
+          YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
+          YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+          VIDEO_TITLE: ${{ inputs.title || github.event.head_commit.message }}
+          PRIVACY_STATUS: ${{ inputs.privacy_status || 'public' }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+          from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+          from google.oauth2.credentials import Credentials
+          from google.auth.transport.requests import Request
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          required = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET", "YOUTUBE_REFRESH_TOKEN"]
+          missing = [key for key in required if not os.getenv(key)]
+          if missing:
+              raise SystemExit("Missing YouTube connection secrets: " + ", ".join(missing))
+
+          videos = [p for p in Path("youtube-upload").rglob("*.mp4") if p.is_file()]
+          if not videos:
+              raise SystemExit("No MP4 found. The artifact may have expired, or the Telegram file could not be downloaded.")
+          if os.getenv("GITHUB_EVENT_NAME") == "push":
+              video = Path("youtube-upload/video.mp4")
+              if not video.exists():
+                  raise SystemExit("The MP4 from the triggering commit was not prepared.")
+          else:
+              video = max(videos, key=lambda p: p.stat().st_size)
+          if video.stat().st_size < 10000:
+              raise SystemExit("Selected MP4 is unexpectedly small.")
+
+          privacy = os.environ["PRIVACY_STATUS"]
+          if privacy not in ("public", "private"):
+              raise SystemExit("Invalid privacy selection.")
+          raw_title = os.environ.get("VIDEO_TITLE", "").strip()
+          if raw_title.startswith("Auto-publish: "):
+              raw_title = raw_title[len("Auto-publish: "):]
+          title = raw_title[:100]
+          if not title or title.startswith("Upload generated video "):
+              title = video.stem.replace("_", " ").replace("-", " ")[:100] or "AI Educational Short"
+
+          topic_words = re.findall(r"[A-Za-z0-9]+", title)
+          tags = list(dict.fromkeys(
+              ["CurioMotion", "Shorts", "Education", "Science", "Technology", "HowItWorks"]
+              + [word for word in topic_words if len(word) > 2]
+          ))[:20]
+          description = (
+              f"{title}\\n\\n"
+              "Explore • Learn • Be Amazed.\\n\\n"
+              f"In this CurioMotion explainer, discover the science, engineering and mechanisms behind {title.rstrip('?!.')}. "
+              "A concise educational explanation with visuals and Hindi narration.\\n\\n"
+              "#Shorts #CurioMotion #Education #Science #HowItWorks"
+          )
+
+          frame = Path("youtube-upload/thumbnail-frame.jpg")
+          thumbnail = Path("youtube-upload/thumbnail.jpg")
+          subprocess.run([
+              "ffmpeg", "-y", "-ss", "1", "-i", str(video),
+              "-frames:v", "1", "-vf",
+              "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+              str(frame)
+          ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+          if not frame.exists():
+              raise SystemExit("Could not extract a frame for the YouTube thumbnail.")
+          image = Image.open(frame).convert("RGB")
+          image = ImageEnhance.Brightness(image).enhance(0.72)
+          gradient = Image.new("RGBA", image.size, (0, 0, 0, 0))
+          gd = ImageDraw.Draw(gradient)
+          for y in range(330, 720):
+              alpha = int(205 * (y - 330) / 390)
+              gd.line((0, y, 1280, y), fill=(0, 0, 0, alpha))
+          image = Image.alpha_composite(image.convert("RGBA"), gradient)
+          draw = ImageDraw.Draw(image)
+          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          font = ImageFont.truetype(font_path, 58)
+          lines, current = [], ""
+          for word in title.split():
+              test = (current + " " + word).strip()
+              if draw.textbbox((0, 0), test, font=font)[2] > 1120 and current:
+                  lines.append(current)
+                  current = word
+              else:
+                  current = test
+          if current:
+              lines.append(current)
+          lines = lines[:3]
+          y = 455 if len(lines) <= 2 else 405
+          for line in lines:
+              draw.text((70, y), line, font=font, fill="white", stroke_width=3, stroke_fill=(0, 0, 0))
+              y += 76
+          small_font = ImageFont.truetype(font_path, 22)
+          draw.text((72, 650), "CURIOMOTION  •  EXPLORE • LEARN • BE AMAZED", font=small_font, fill=(255, 220, 120))
+          image.convert("RGB").save(thumbnail, "JPEG", quality=88, optimize=True)
+          if thumbnail.stat().st_size > 2 * 1024 * 1024:
+              image.convert("RGB").save(thumbnail, "JPEG", quality=78, optimize=True)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("video_title=" + title.replace(chr(10), " ") + chr(10))
+              f.write("privacy_status=" + privacy + chr(10))
+
+          credentials = Credentials(
+              token=None,
+              refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"],
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ["YOUTUBE_CLIENT_ID"],
+              client_secret=os.environ["YOUTUBE_CLIENT_SECRET"],
+              scopes=["https://www.googleapis.com/auth/youtube.upload"]
+          )
+          credentials.refresh(Request())
+          youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
+          request = youtube.videos().insert(
+              part="snippet,status",
+              body={
+                  "snippet": {
+                      "title": title,
+                      "description": description,
+                      "tags": tags,
+                      "categoryId": "27"
+                  },
+                  "status": {
+                      "privacyStatus": privacy,
+                      "selfDeclaredMadeForKids": False
+                  }
+              },
+              media_body=MediaFileUpload(str(video), mimetype="video/mp4", chunksize=8 * 1024 * 1024, resumable=True)
+          )
+          response = None
+          while response is None:
+              status, response = request.next_chunk()
+              if status:
+                  print("YouTube upload progress: {:.1f}%".format(status.progress() * 100))
+          video_id = response.get("id")
+          if not video_id:
+              raise SystemExit("YouTube did not return a video ID.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("video_id=" + video_id + "\n")
+          print("Uploaded video ID:", video_id)
+
+          thumbnail_response = youtube.thumbnails().set(
+              videoId=video_id,
+              media_body=MediaFileUpload(str(thumbnail), mimetype="image/jpeg")
+          ).execute()
+          print("Custom thumbnail uploaded:", bool(thumbnail_response))
+          PY
+
+      - name: Notify Telegram
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          YOUTUBE_VIDEO_ID: ${{ steps.youtube.outputs.video_id }}
+          PRIVACY_STATUS: ${{ steps.youtube.outputs.privacy_status }}
+          VIDEO_TITLE: ${{ steps.youtube.outputs.video_title }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+          video_id = os.environ["YOUTUBE_VIDEO_ID"]
+          message = ("✅ YouTube upload complete!\n\n" + os.environ["VIDEO_TITLE"] +
+                     "\nVisibility: " + os.environ["PRIVACY_STATUS"].upper() +
+                     "\nhttps://youtu.be/" + video_id)
+          response = requests.post(
+              "https://api.telegram.org/bot" + os.environ["TELEGRAM_BOT_TOKEN"] + "/sendMessage",
+              json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": message},
+              timeout=20
+          )
+          response.raise_for_status()
+          if not response.json().get("ok"):
+              raise SystemExit("Telegram notification failed: " + response.text)
+          PY
+
+      - name: Notify Telegram if upload fails
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python - <<'PY'
+          import os
+          import requests
+          token = os.getenv("TELEGRAM_BOT_TOKEN")
+          chat = os.getenv("TELEGRAM_CHAT_ID")
+          if token and chat:
+              requests.post(
+                  "https://api.telegram.org/bot" + token + "/sendMessage",
+                  json={"chat_id": chat, "text": "❌ YouTube upload failed. Check the GitHub Actions run log. A forwarded Telegram file must be 20 MB or smaller."},
+                  timeout=20
+              ).raise_for_status()
+          PY
+ | head -n 1)"
+          if [ -z "$VIDEO_PATH" ]; then
+            echo "No newly added MP4 found in the triggering commit."
+            exit 1
+          fi
+          cp "$VIDEO_PATH" youtube-upload/video.mp4
+          echo "Selected newly generated video: $VIDEO_PATH"
 
       - name: Download selected generated video artifact
         if: inputs.source == 'artifact'
