@@ -53,7 +53,7 @@ export async function handleYouTubeCallback(env, callback) {
       return true;
     }
     const uploadId = String(Date.now());
-    const title = String(callback.message.caption || "AI Educational Short").replace(/^🎬\\s*/, "").slice(0, 100);
+    const title = String(callback.message.caption || "AI Educational Short").replace(/^🎬\s*/, "").slice(0, 100);
     await env.QUIZ_STATE.put("youtube-file:" + chatId + ":" + uploadId, JSON.stringify({
       file_id: file.file_id,
       file_size: Number(file.file_size || 0),
@@ -61,7 +61,7 @@ export async function handleYouTubeCallback(env, callback) {
     }), { expirationTtl: 900 });
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "📤 YouTube upload\\n\\n" + title + "\\n\\nChoose visibility:",
+      text: "📤 YouTube upload\n\n" + title + "\n\nChoose visibility:",
       reply_markup: { inline_keyboard: [
         [{ text: "🌍 Publish Public", callback_data: "ytfile:" + uploadId + ":public" }],
         [{ text: "🔒 Upload Private", callback_data: "ytfile:" + uploadId + ":private" }],
