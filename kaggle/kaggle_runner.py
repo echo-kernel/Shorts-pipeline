@@ -141,7 +141,7 @@ github_response = requests.put(
         "User-Agent": "CurioMotion-Auto-Publisher"
     },
     json={
-        "message": "Upload generated video for automatic YouTube publishing",
+        "message": "Auto-publish: " + str(json.loads(story_payload).get("title") or "AI Educational Short")[:100],
         "content": encoded_video,
         "branch": "jee-telegram-quiz"
     },
