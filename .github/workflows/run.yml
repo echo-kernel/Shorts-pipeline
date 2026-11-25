@@ -246,12 +246,9 @@ jobs:
           PY
 
       - name: Inject story into the private Kaggle kernel source
-        env:
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import json
-          import os
           from pathlib import Path
 
           runner = Path("kaggle/kaggle_runner.py")
@@ -259,14 +256,13 @@ jobs:
           anchor = 'REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"'
           story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
           payload = json.dumps(story, ensure_ascii=False, separators=(",", ":"))
-          chat_id = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
-          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\nVIDEO_CHAT_ID = " + repr(chat_id) + "\n" + anchor
+          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\\n" + anchor
 
           if anchor not in source:
               raise SystemExit("Runner insertion point not found; refusing to submit.")
           source = source.replace(anchor, injection, 1)
           runner.write_text(source, encoding="utf-8")
-          print("Generated story embedded. No Gemini API key is sent to Kaggle.")
+          print("Generated story embedded. No Gemini or Telegram credentials are sent to Kaggle.")
           PY
 
       - name: Check Kaggle kernel is not already queued or running
@@ -292,6 +288,8 @@ jobs:
           kaggle kernels push -p kaggle
 
       - name: Save submitted topic and Kaggle job record
+        env:
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import json
@@ -313,6 +311,7 @@ jobs:
               "kernel": "apuravjadhav/shorts-pipeline-wan",
               "topic": topic,
               "title": story.get("title", ""),
+              "chat_id": os.environ.get("TELEGRAM_CHAT_ID", "").strip(),
               "submitted_at": now,
               "status": "SUBMITTED",
               "last_notified_status": ""
