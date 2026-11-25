@@ -58,7 +58,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p youtube-upload
-          VIDEO_PATH="$(git diff-tree --no-commit-id --name-only -r HEAD | grep -E '^videos/.*\\.mp4
+          VIDEO_PATH="$(git show --pretty=format: --name-only HEAD | awk 'index($0, "videos/")==1 && substr($0, length($0)-3)==".mp4" {print; exit}')"
+          if [ -z "$VIDEO_PATH" ]; then
+            echo "No newly added MP4 found in the triggering commit."
+            exit 1
+          fi
+          cp "$VIDEO_PATH" youtube-upload/video.mp4
+          echo "Selected newly generated video: $VIDEO_PATH"
+
       - name: Download selected generated video artifact
         if: inputs.source == 'artifact'
         uses: actions/download-artifact@v4
