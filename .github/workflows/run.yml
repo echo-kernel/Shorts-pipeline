@@ -293,7 +293,6 @@ jobs:
         run: |
           python - <<'PY'
           import json
-          import os
           import subprocess
           from datetime import datetime, timezone
           from pathlib import Path
@@ -380,35 +379,6 @@ jobs:
 
           print("The Kaggle runner handles the MP4 GitHub push and Telegram completion message.")
           PY
-
-      - name: Pull completed video from Kaggle output
-        env:
-          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          mkdir -p ./out
-          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p ./out
-          echo "Files retrieved from Kaggle:"
-          find ./out -maxdepth 4 -type f -printf '%p (%s bytes)\\n'
-          python - <<'PY'
-          from pathlib import Path
-          videos = [p for p in Path("out").rglob("*.mp4") if p.is_file()]
-          if not videos:
-              raise SystemExit("Kaggle output download completed, but no MP4 was found in ./out.")
-          for video in videos:
-              size = video.stat().st_size
-              print(f"Verified Kaggle MP4: {video} ({size} bytes)")
-              if size < 10000:
-                  raise SystemExit(f"Kaggle MP4 is unexpectedly small: {video} ({size} bytes)")
-          PY
-
-      - name: Store Kaggle output as a workflow artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: kaggle-generated-video
-          path: out/**/*.mp4
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Notify Telegram if submission workflow fails
         if: failure()
