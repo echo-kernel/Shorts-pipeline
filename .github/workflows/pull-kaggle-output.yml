@@ -1,0 +1,66 @@
+name: Recover Existing Kaggle Video Output
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  recover-existing-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Kaggle CLI
+        run: |
+          python -m pip install --upgrade pip
+          pip install kaggle
+
+      - name: Pull existing output from Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KAGGLE_API_TOKEN:-}" ]; then
+            echo "Missing GitHub Actions secret: KAGGLE_API_TOKEN"
+            exit 1
+          fi
+          mkdir -p ./out
+          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p ./out
+          echo "Downloaded Kaggle output files:"
+          find ./out -maxdepth 5 -type f -printf '%p (%s bytes)\\n'
+
+      - name: Validate and package the existing MP4
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          root = Path("out")
+          videos = [p for p in root.rglob("*.mp4") if p.is_file()]
+          if not videos:
+              raise SystemExit("No MP4 exists in the current Kaggle kernel output.")
+          preferred = [p for p in videos if p.name == "historical_short.mp4"]
+          source = preferred[0] if preferred else max(videos, key=lambda p: p.stat().st_mtime)
+          size = source.stat().st_size
+          if size < 10000:
+              raise SystemExit(f"Recovered MP4 is too small ({size} bytes): {source}")
+          destination = Path("recovered-video") / source.name
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(source, destination)
+          print(f"Ready to download: {destination} ({size} bytes)")
+          PY
+
+      - name: Attach recovered video to this GitHub Actions run
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovered-existing-kaggle-video
+          path: recovered-video/*.mp4
+          if-no-files-found: error
+          retention-days: 7
