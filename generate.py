@@ -270,7 +270,7 @@ async def create_voice(text, filename):
             if chunk.get("type") == "audio":
                 audio.write(chunk["data"])
             elif chunk.get("type") == "WordBoundary":
-                item = chunk.get("data", {})
+                item = chunk.get("data", chunk)
                 if item.get("text"):
                     boundaries.append({
                         "text": item["text"],
