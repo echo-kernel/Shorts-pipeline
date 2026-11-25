@@ -125,7 +125,7 @@ keyboard = {
             {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}
         ],
         [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}],
-        [{"text": "📤 YouTube upload options", "callback_data": "ytforward"}]
+        [{"text": "📤 YouTube upload options", "callback_data": "ytcurrent"}]
     ]
 }
 caption = ("🎬 Your AI educational explainer Short is ready!\n" + topic)[:1000]
