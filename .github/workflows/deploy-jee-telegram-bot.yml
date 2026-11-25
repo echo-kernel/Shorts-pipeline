@@ -12,6 +12,11 @@ on:
 permissions:
   contents: read
 
+# Avoid simultaneous Worker deployments and secret updates.
+concurrency:
+  group: jee-telegram-quiz-worker-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
