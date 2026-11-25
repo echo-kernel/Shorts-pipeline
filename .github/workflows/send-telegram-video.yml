@@ -53,7 +53,7 @@ jobs:
 
           topic = str(job.get("topic") or video.stem)
           title = str(job.get("title") or "AI Educational Short")
-          caption = "🎬 Video generated successfully!\\n\\nTopic: " + topic + "\\nTitle: " + title
+          caption = "🎬 Video generated successfully!\n\nTopic: " + topic + "\nTitle: " + title
           keyboard = {
               "inline_keyboard": [
                   [
