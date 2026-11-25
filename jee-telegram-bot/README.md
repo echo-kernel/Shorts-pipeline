@@ -84,7 +84,7 @@ The same Telegram bot can upload a newly generated Short or select one of the pr
 - Each new video message includes **YouTube upload options**.
 - Use `/youtube` or **📤 YouTube Uploads** to select a previous generated video.
 - Choose **Public**, **Private**, or **Don't Publish** before any upload starts.
-- Generated MP4 artifacts are retained by GitHub Actions for 7 days. Previous-video selection therefore works for 7 days after generation.
+- Generated MP4 artifacts are retained by GitHub Actions for 7 days and appear in `/youtube` history during that period.\n- For videos older than 7 days, choose **Forward an older video** and forward the MP4 to the bot. This Telegram Bot API route supports files up to 20 MB. Larger old videos need to be re-generated or uploaded through a larger-file storage route.
 
 ### One-time YouTube connection
 
@@ -94,6 +94,6 @@ Create a Google OAuth client for the YouTube Data API v3 and obtain an OAuth ref
 - `YOUTUBE_CLIENT_SECRET`
 - `YOUTUBE_REFRESH_TOKEN`
 
-Also keep the existing `VIDEO_GITHUB_TOKEN` secret configured. It must be a fine-grained or classic token that can dispatch repository workflows and read Actions artifacts. The existing Cloudflare secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are used to register completed videos in the bot's history.
+Also keep the existing `VIDEO_GITHUB_TOKEN` secret configured. YouTube upload actions are restricted to the chat ID in the existing `TELEGRAM_CHAT_ID` repository secret. It must be a fine-grained or classic token that can dispatch repository workflows and read Actions artifacts. The existing Cloudflare secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` are used to register completed videos in the bot's history.
 
 YouTube upload runs in a separate GitHub Actions workflow, not inside the Cloudflare Worker. This avoids trying to transfer large MP4 files through Telegram or the Worker. The selected privacy setting is applied when the video is uploaded; **Public** publishes immediately, while **Private** stays private. **Don't Publish** cancels without uploading.
