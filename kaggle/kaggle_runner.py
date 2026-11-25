@@ -5,6 +5,7 @@ import subprocess
 import shutil
 import json
 import traceback
+import requests
 from pathlib import Path
 
 REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"
@@ -153,40 +154,40 @@ print("GitHub received MP4:", github_path)
 print("GitHub push will trigger automatic public YouTube upload.")
 
 
-# Deliver the finished video directly from Kaggle. GitHub Actions has already exited.
+# Telegram is notification and feedback only; YouTube receives the MP4 from GitHub.
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
-    raise RuntimeError("Video generated, but TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID is missing from Kaggle Secrets.")
+    raise RuntimeError("Video generated and sent to GitHub, but Telegram notification credentials are missing.")
 
 story = json.loads(story_payload)
 topic = str(story.get("topic") or "AI Educational Short")
+title = str(story.get("title") or "AI Educational Short")
 keyboard = {
     "inline_keyboard": [
         [
             {"text": "👍 Good video", "callback_data": "video_feedback:good"},
             {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}
         ],
-        [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}],
-        [{"text": "📤 YouTube upload options", "callback_data": "ytcurrent"}]
+        [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]
     ]
 }
-caption = ("🎬 Your AI educational explainer Short is ready!\n" + topic)[:1000]
-
-import requests
-with video.open("rb") as handle:
-    response = requests.post(
-        "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendVideo",
-        data={
-            "chat_id": TELEGRAM_CHAT,
-            "caption": caption,
-            "reply_markup": json.dumps(keyboard, ensure_ascii=False)
-        },
-        files={"video": ("historical_short.mp4", handle, "video/mp4")},
-        timeout=(30, 600)
-    )
+message = (
+    "🎬 Video generated successfully!\\n\\n"
+    "Topic: " + topic + "\\n"
+    "Title: " + title + "\\n\\n"
+    "The MP4 has been sent to GitHub for automatic YouTube publishing. "
+    "I will send another message when YouTube upload finishes."
+)
+response = requests.post(
+    "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage",
+    data={
+        "chat_id": TELEGRAM_CHAT,
+        "text": message[:3900],
+        "reply_markup": json.dumps(keyboard, ensure_ascii=False)
+    },
+    timeout=30
+)
 response.raise_for_status()
 result = response.json()
 if not result.get("ok"):
-    raise RuntimeError("Telegram rejected the generated MP4: " + str(result))
-
-print("SUCCESS: Final MP4 sent directly from Kaggle to Telegram.")
-        
+    raise RuntimeError("Telegram notification failed: " + str(result))
+print("SUCCESS: Telegram notification sent; no video file was sent to Telegram.")
