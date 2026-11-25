@@ -9,7 +9,7 @@ import requests
 from pathlib import Path
 
 REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"
-BRANCH = "wan-kaggle-test"
+BRANCH = "jee-telegram-quiz"
 ROOT = Path("/kaggle/working/Shorts-pipeline")
 
 print("AI HISTORICAL SHORTS - KAGGLE RUNNER")
@@ -50,12 +50,38 @@ def report_uncaught_exception(exc_type, exc_value, exc_tb):
 
 sys.excepthook = report_uncaught_exception
 
-# 1. Download project from GitHub
+# 1. Download the exact project branch from GitHub.
+# Refresh an existing checkout too, so reused Kaggle sessions cannot keep stale code.
 if not ROOT.exists():
     subprocess.run([
         "git", "clone", "--depth", "1",
         "--branch", BRANCH, REPO, str(ROOT)
     ], check=True)
+else:
+    subprocess.run([
+        "git", "-C", str(ROOT), "fetch", "--depth", "1", "origin", BRANCH
+    ], check=True)
+    subprocess.run([
+        "git", "-C", str(ROOT), "checkout", "-B", BRANCH, "FETCH_HEAD"
+    ], check=True)
+    subprocess.run([
+        "git", "-C", str(ROOT), "reset", "--hard", "FETCH_HEAD"
+    ], check=True)
+
+checked_out_branch = subprocess.check_output(
+    ["git", "-C", str(ROOT), "branch", "--show-current"],
+    text=True
+).strip()
+checked_out_commit = subprocess.check_output(
+    ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+    text=True
+).strip()
+print("Project branch:", checked_out_branch)
+print("Project commit:", checked_out_commit)
+if checked_out_branch != BRANCH:
+    raise RuntimeError(
+        f"Wrong project branch: expected {BRANCH}, got {checked_out_branch}"
+    )
 
 os.chdir(ROOT)
 sys.path.insert(0, str(ROOT))
