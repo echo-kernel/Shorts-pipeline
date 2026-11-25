@@ -322,7 +322,7 @@ def make_srt(text, duration, filename):
         group_start = None
         group_end = None
         for item in boundaries:
-            word = re.sub(r"\\s+([,.;:!?।])", r"\\1", str(item.get("text", "")).strip())
+            word = re.sub(r"\s+([,.;:!?।])", r"\1", str(item.get("text", "")).strip())
             if not word or re.fullmatch(r"[,.;:!?।]+", word):
                 continue
             start = max(0.0, int(item.get("offset", 0)) / 10_000_000)
@@ -340,7 +340,7 @@ def make_srt(text, duration, filename):
     # Fallback only if the TTS service did not provide boundary metadata.
     if not cues:
         print("WARNING: TTS word timings unavailable; using proportional subtitle timing.")
-        clean_text = re.sub(r"\\s+([,.;:!?।])", r"\\1", text)
+        clean_text = re.sub(r"\s+([,.;:!?।])", r"\1", text)
         words = [w for w in clean_text.split() if not re.fullmatch(r"[,.;:!?।]+", w)]
         groups = [words[i:i + 5] for i in range(0, len(words), 5)]
         weights = [max(1, sum(len(w) for w in group)) for group in groups]
@@ -355,7 +355,7 @@ def make_srt(text, duration, filename):
         for index, (start, end, caption) in enumerate(cues, start=1):
             if end <= start:
                 end = min(duration, start + 0.25)
-            file.write(f"{index}\\n{stamp(start)} --> {stamp(end)}\\n{caption}\\n\\n")
+            file.write(f"{index}\n{stamp(start)} --> {stamp(end)}\n{caption}\n\n")
 
 
 def create_clips(scenes, total_duration, character_bible=""):
@@ -410,7 +410,7 @@ def normalize_clips(clips):
         tracker.update(
             65 + index * 3,
             "Normalizing clips",
-            f"Processing clip {index}/4"
+            f"Processing clip {index}/{len(clips)}"
         )
 
         output = WORK_DIR / f"normalized_{index}.mp4"
@@ -534,7 +534,7 @@ def assemble_final_video(joined, voice, narration, era_label="1829"):
 
     subtitle_filter = (
         f"subtitles='{subtitle_path}':"
-        "force_style='FontName=DejaVu Sans,"
+        "force_style='FontName=Noto Sans Devanagari,"
         "FontSize=18,PrimaryColour=&H00FFFFFF,"
         "OutlineColour=&H00000000,BorderStyle=1,"
         "Outline=2,Shadow=1,Alignment=2,MarginV=120'"
