@@ -1,0 +1,82 @@
+name: Send Generated Video to Telegram
+
+on:
+  push:
+    branches:
+      - jee-telegram-quiz
+    paths:
+      - "videos/*.mp4"
+
+permissions:
+  contents: read
+
+jobs:
+  send-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out generated video and job details
+        uses: actions/checkout@v4
+
+      - name: Send actual MP4 to Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          DEFAULT_TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VIDEO_COMMIT: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+          import requests
+
+          changed = subprocess.check_output(
+              ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", os.environ["VIDEO_COMMIT"]],
+              text=True
+          ).splitlines()
+          videos = [Path(p) for p in changed if p.startswith("videos/") and p.endswith(".mp4")]
+          if not videos:
+              raise SystemExit("No MP4 was added by the triggering GitHub commit.")
+          video = videos[-1]
+          if not video.is_file() or video.stat().st_size < 10000:
+              raise SystemExit("Generated MP4 is missing or unexpectedly small.")
+          if video.stat().st_size > 50 * 1024 * 1024:
+              raise SystemExit("MP4 exceeds Telegram Bot API's 50 MB upload limit: " + str(video.stat().st_size))
+
+          job_path = Path("kaggle_job.json")
+          job = json.loads(job_path.read_text(encoding="utf-8")) if job_path.exists() else {}
+          chat_id = str(job.get("chat_id") or os.environ.get("DEFAULT_TELEGRAM_CHAT_ID", "")).strip()
+          token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+          if not token or not chat_id:
+              raise SystemExit("GitHub Telegram bot token or destination chat ID is missing.")
+
+          topic = str(job.get("topic") or video.stem)
+          title = str(job.get("title") or "AI Educational Short")
+          caption = "🎬 Video generated successfully!\\n\\nTopic: " + topic + "\\nTitle: " + title
+          keyboard = {
+              "inline_keyboard": [
+                  [
+                      {"text": "👍 Good video", "callback_data": "video_feedback:good"},
+                      {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}
+                  ],
+                  [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]
+              ]
+          }
+          response = requests.post(
+              "https://api.telegram.org/bot" + token + "/sendVideo",
+              data={
+                  "chat_id": chat_id,
+                  "caption": caption[:1024],
+                  "supports_streaming": "true",
+                  "reply_markup": json.dumps(keyboard, ensure_ascii=False)
+              },
+              files={"video": (video.name, video.open("rb"), "video/mp4")},
+              timeout=(30, 300)
+          )
+          response.raise_for_status()
+          result = response.json()
+          if not result.get("ok"):
+              raise SystemExit("Telegram sendVideo failed: " + str(result))
+          print("Actual MP4 sent to Telegram successfully:", video.name)
+          PY
