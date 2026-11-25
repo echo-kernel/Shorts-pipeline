@@ -22,7 +22,8 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-VOICE = os.getenv("TTS_VOICE", "hi-IN-MadhurNeural")
+# New default voice; TTS_VOICE can override it without changing the pipeline.
+VOICE = os.getenv("TTS_VOICE", "hi-IN-SwaraNeural")
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
@@ -256,14 +257,32 @@ def create_story():
 
 
 async def create_voice(text, filename):
+    """Synthesize fresh narration and capture real speech word-boundary timings."""
     communicate = edge_tts.Communicate(
         text=text,
         voice=VOICE,
-        rate="-5%",
+        rate="-3%",
         volume="+0%"
     )
-
-    await communicate.save(str(filename))
+    boundaries = []
+    with open(filename, "wb") as audio:
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                audio.write(chunk["data"])
+            elif chunk.get("type") == "WordBoundary":
+                item = chunk.get("data", {})
+                if item.get("text"):
+                    boundaries.append({
+                        "text": item["text"],
+                        "offset": int(item.get("offset", 0)),
+                        "duration": int(item.get("duration", 0))
+                    })
+    timing_file = Path(filename).with_suffix(".wordtimings.json")
+    timing_file.write_text(
+        json.dumps(boundaries, ensure_ascii=False),
+        encoding="utf-8"
+    )
+    print(f"TTS voice: {VOICE}; captured word timings: {len(boundaries)}")
 
 
 def generate_voice(text):
@@ -280,51 +299,63 @@ def generate_voice(text):
 
 
 def make_srt(text, duration, filename):
-    # Attach punctuation to the preceding word so punctuation cannot become
-    # a standalone subtitle cue (for example, a floating comma).
-    text = re.sub(r"\s+([,.;:!?।])", r"\1", text)
-    words = [word for word in text.split() if not re.fullmatch(r"[,.;:!?।]+", word)]
-
-    if not words:
-        raise RuntimeError("Narration has no words.")
-
-    groups = [
-        words[i:i + 5]
-        for i in range(0, len(words), 5)
-    ]
-
-    segment_duration = duration / len(groups)
+    """Build captions from Edge TTS word-boundary timestamps, not equal time slices."""
+    timing_file = WORK_DIR / "narration.wordtimings.json"
+    boundaries = []
+    if timing_file.exists():
+        try:
+            boundaries = json.loads(timing_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"Could not read speech timings: {exc}")
 
     def stamp(seconds):
-        milliseconds = int(seconds * 1000)
-
+        milliseconds = max(0, int(seconds * 1000))
         hours = milliseconds // 3600000
         minutes = (milliseconds % 3600000) // 60000
         seconds_part = (milliseconds % 60000) // 1000
         millis = milliseconds % 1000
+        return f"{hours:02}:{minutes:02}:{seconds_part:02},{millis:03}"
 
-        return (
-            f"{hours:02}:{minutes:02}:"
-            f"{seconds_part:02},{millis:03}"
-        )
+    cues = []
+    if boundaries:
+        group = []
+        group_start = None
+        group_end = None
+        for item in boundaries:
+            word = re.sub(r"\\s+([,.;:!?।])", r"\\1", str(item.get("text", "")).strip())
+            if not word or re.fullmatch(r"[,.;:!?।]+", word):
+                continue
+            start = max(0.0, int(item.get("offset", 0)) / 10_000_000)
+            end = max(start + 0.08, (int(item.get("offset", 0)) + int(item.get("duration", 0))) / 10_000_000)
+            if group and (len(group) >= 5 or len(" ".join(group + [word])) > 34):
+                cues.append((group_start, min(duration, max(group_end, group_start + 0.25)), " ".join(group)))
+                group, group_start, group_end = [], None, None
+            if group_start is None:
+                group_start = start
+            group.append(word)
+            group_end = end
+        if group:
+            cues.append((group_start, min(duration, max(group_end, group_start + 0.25)), " ".join(group)))
+
+    # Fallback only if the TTS service did not provide boundary metadata.
+    if not cues:
+        print("WARNING: TTS word timings unavailable; using proportional subtitle timing.")
+        clean_text = re.sub(r"\\s+([,.;:!?।])", r"\\1", text)
+        words = [w for w in clean_text.split() if not re.fullmatch(r"[,.;:!?।]+", w)]
+        groups = [words[i:i + 5] for i in range(0, len(words), 5)]
+        weights = [max(1, sum(len(w) for w in group)) for group in groups]
+        total_weight = sum(weights) or 1
+        cursor = 0.0
+        for group, weight in zip(groups, weights):
+            span = duration * weight / total_weight
+            cues.append((cursor, min(duration, cursor + span), " ".join(group)))
+            cursor += span
 
     with open(filename, "w", encoding="utf-8") as file:
-
-        for index, group in enumerate(groups):
-
-            start = index * segment_duration
-
-            end = min(
-                duration,
-                (index + 1) * segment_duration
-            )
-
-            file.write(f"{index + 1}\n")
-            file.write(
-                f"{stamp(start)} --> {stamp(end)}\n"
-            )
-
-            file.write(" ".join(group) + "\n\n")
+        for index, (start, end, caption) in enumerate(cues, start=1):
+            if end <= start:
+                end = min(duration, start + 0.25)
+            file.write(f"{index}\\n{stamp(start)} --> {stamp(end)}\\n{caption}\\n\\n")
 
 
 def create_clips(scenes, total_duration, character_bible=""):
