@@ -790,6 +790,9 @@ async function handleMessage(env, message) {
   if (!raw.startsWith("/")) {
     return telegram(env, "sendMessage", { chat_id: chatId, text: "This bot now handles AI Shorts only. Tap 🎥 Request New Video or send /video. Use /youtube for uploads and /feedback for video feedback." });
   }
+  if (raw.startsWith("/") && !["/start", "/video", "/feedback", "/youtube", "/help"].includes(text)) {
+    return telegram(env, "sendMessage", { chat_id: chatId, text: "Quiz features are disabled. This bot is now for AI Shorts only. Use /video to request a video." });
+  }
   if (text === "/subjects") return showSubjects(env, chatId);
   if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
   if (text === "/help" || text === "🆘 help") {
@@ -921,6 +924,7 @@ async function handleCallback(env, callback) {
     }
     return;
   }
+  if (parts[0] !== "video") return;
   if (parts[0] === "section") {
     if (parts[1] === "video") return askVideoTopic(env, chatId);
     if (parts[1] === "youtube") return showYouTubeUploads(env, chatId);
