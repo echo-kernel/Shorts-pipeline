@@ -36,7 +36,7 @@ concurrency:
 jobs:
   generate-and-render:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 360
 
     steps:
       - name: Checkout repository
@@ -328,6 +328,57 @@ jobs:
               subprocess.run(["git", "commit", "-m", "Record submitted Kaggle explainer job"], check=True)
               subprocess.run(["git", "push"], check=True)
               print(f"Recorded submitted Kaggle job for: {topic}")
+          PY
+
+      - name: Wait for Kaggle generation to finish
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          python - <<'PY'
+          import re
+          import subprocess
+          import time
+
+          kernel = "apuravjadhav/shorts-pipeline-wan"
+          max_wait_seconds = 350 * 60
+          interval_seconds = 60
+          started = time.monotonic()
+          transient_failures = 0
+
+          print(f"Monitoring Kaggle kernel: {kernel}")
+          while time.monotonic() - started < max_wait_seconds:
+              result = subprocess.run(
+                  ["kaggle", "kernels", "status", kernel],
+                  capture_output=True,
+                  text=True
+              )
+              output = (result.stdout + "\\n" + result.stderr).strip()
+              print(output or f"Kaggle status command exited with code {result.returncode}")
+
+              if result.returncode != 0:
+                  transient_failures += 1
+                  if transient_failures >= 5:
+                      raise SystemExit("Could not read Kaggle status after 5 consecutive attempts.")
+                  print("Temporary status-check failure; retrying in 60 seconds.")
+                  time.sleep(interval_seconds)
+                  continue
+
+              transient_failures = 0
+              match = re.search(r"KernelWorkerStatus\\.([A-Z_]+)", output)
+              status = match.group(1) if match else ""
+
+              if status == "COMPLETE":
+                  print("Kaggle generation completed successfully.")
+                  break
+              if status in {"ERROR", "FAILED", "CANCELLED"}:
+                  raise SystemExit(f"Kaggle generation ended with status: {status}")
+
+              print(f"Current Kaggle status: {status or 'not recognized yet'}; checking again in 60 seconds.")
+              time.sleep(interval_seconds)
+          else:
+              raise SystemExit("Timed out after 350 minutes waiting for Kaggle. Check the Kaggle notebook output.")
+
+          print("The Kaggle runner handles the MP4 GitHub push and Telegram completion message.")
           PY
 
       - name: Notify Telegram if submission workflow fails
