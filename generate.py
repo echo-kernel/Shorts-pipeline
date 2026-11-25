@@ -23,7 +23,7 @@ TOPIC = os.getenv(
 )
 
 # New default voice; TTS_VOICE can override it without changing the pipeline.
-VOICE = os.getenv("TTS_VOICE", "hi-IN-SwaraNeural")
+VOICE = os.getenv("TTS_VOICE", "hi-IN-KunalNeural")
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
