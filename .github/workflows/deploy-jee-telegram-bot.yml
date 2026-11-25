@@ -76,6 +76,7 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN || secrets.telegram_bot_token }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
+          OWNER_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           set -euo pipefail
           WEBHOOK_SECRET="$(openssl rand -hex 32)"
@@ -86,6 +87,12 @@ jobs:
             echo "Video workflow trigger secret configured."
           else
             echo "VIDEO_GITHUB_TOKEN is not set; video requests will show setup instructions."
+          fi
+          if [ -n "$OWNER_CHAT_ID" ]; then
+            printf '%s' "$OWNER_CHAT_ID" | npx wrangler secret put OWNER_CHAT_ID --config jee-telegram-bot/wrangler.toml
+            echo "YouTube owner restriction configured."
+          else
+            echo "TELEGRAM_CHAT_ID is missing; YouTube upload actions will remain owner-locked."
           fi
           printf '%s' "$WEBHOOK_SECRET" | npx wrangler secret put TELEGRAM_WEBHOOK_SECRET --config jee-telegram-bot/wrangler.toml
           echo "::add-mask::$WEBHOOK_SECRET"
