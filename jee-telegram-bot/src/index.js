@@ -1147,7 +1147,10 @@ export default {
       await env.QUIZ_STATE.put(updateKey, "1", { expirationTtl: 86400 });
     }
     try {
-      if (update.message) {\n        const handledYouTube = await handleYouTubeMessage(env, update.message);\n        if (!handledYouTube) await handleMessage(env, update.message);\n      }
+      if (update.message) {
+        const handledYouTube = await handleYouTubeMessage(env, update.message);
+        if (!handledYouTube) await handleMessage(env, update.message);
+      }
       if (update.callback_query) await handleCallback(env, update.callback_query);
     } catch (error) {
       console.error("Update handling failed", String(error));
