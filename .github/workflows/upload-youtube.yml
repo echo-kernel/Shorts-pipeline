@@ -145,6 +145,9 @@ jobs:
           title = os.environ.get("VIDEO_TITLE", "").strip()[:100]
           if not title or title.startswith("Upload generated video "):
               title = video.stem.replace("_", " ").replace("-", " ")[:100] or "AI Educational Short"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("video_title=" + title.replace("\\n", " ") + "\\n")
+              f.write("privacy_status=" + privacy + "\\n")
 
           credentials = Credentials(
               token=None,
@@ -191,8 +194,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           YOUTUBE_VIDEO_ID: ${{ steps.youtube.outputs.video_id }}
-          PRIVACY_STATUS: ${{ inputs.privacy_status }}
-          VIDEO_TITLE: ${{ inputs.title }}
+          PRIVACY_STATUS: ${{ steps.youtube.outputs.privacy_status }}
+          VIDEO_TITLE: ${{ steps.youtube.outputs.video_title }}
         run: |
           python - <<'PY'
           import os
@@ -215,7 +218,7 @@ jobs:
         if: failure()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
         run: |
           python - <<'PY'
           import os
