@@ -1,11 +1,22 @@
-name: Upload Previous Short to YouTube
+name: Upload Selected Short to YouTube
 
 on:
   workflow_dispatch:
     inputs:
-      run_id:
-        description: "GitHub Actions run containing the generated MP4"
+      source:
+        description: "Where the selected video is stored"
         required: true
+        type: choice
+        options:
+          - artifact
+          - telegram
+      run_id:
+        description: "GitHub Actions run ID (for generated videos)"
+        required: false
+        type: string
+      file_id:
+        description: "Telegram file ID (for forwarded older videos)"
+        required: false
         type: string
       privacy_status:
         description: "YouTube visibility"
@@ -32,7 +43,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Download the selected generated video
+      - name: Download selected generated video artifact
+        if: inputs.source == 'artifact'
         uses: actions/download-artifact@v4
         with:
           name: historical-short-mp4
@@ -45,10 +57,42 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Download forwarded Telegram video
+        if: inputs.source == 'telegram'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_FILE_ID: ${{ inputs.file_id }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import requests
+
+          token = os.environ["TELEGRAM_BOT_TOKEN"]
+          file_id = os.environ["TELEGRAM_FILE_ID"]
+          if not file_id:
+              raise SystemExit("Telegram file ID is missing.")
+          api = "https://api.telegram.org/bot" + token
+          info = requests.get(api + "/getFile", params={"file_id": file_id}, timeout=20)
+          info.raise_for_status()
+          data = info.json()
+          if not data.get("ok"):
+              raise SystemExit("Telegram getFile failed: " + str(data))
+          file_path = data["result"]["file_path"]
+          size = int(data["result"].get("file_size", 0))
+          if size > 20 * 1024 * 1024:
+              raise SystemExit("Telegram Bot API file download limit is 20 MB.")
+          download = requests.get("https://api.telegram.org/file/bot" + token + "/" + file_path, timeout=120)
+          download.raise_for_status()
+          Path("youtube-upload").mkdir(parents=True, exist_ok=True)
+          Path("youtube-upload/forwarded-video.mp4").write_bytes(download.content)
+          print("Downloaded forwarded video:", len(download.content), "bytes")
+          PY
+
       - name: Install YouTube upload dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install google-api-python-client google-auth google-auth-httplib2
+          pip install google-api-python-client google-auth google-auth-httplib2 requests
 
       - name: Upload video to YouTube
         id: youtube
@@ -72,12 +116,9 @@ jobs:
           if missing:
               raise SystemExit("Missing YouTube connection secrets: " + ", ".join(missing))
 
-          videos = list(Path("youtube-upload").rglob("historical_short.mp4"))
+          videos = [p for p in Path("youtube-upload").rglob("*.mp4") if p.is_file()]
           if not videos:
-              videos = list(Path("youtube-upload").rglob("*.mp4"))
-          if not videos:
-              raise SystemExit("The selected saved video artifact has expired or contains no MP4.")
-
+              raise SystemExit("No MP4 found. The artifact may have expired, or the Telegram file could not be downloaded.")
           video = max(videos, key=lambda p: p.stat().st_size)
           if video.stat().st_size < 10000:
               raise SystemExit("Selected MP4 is unexpectedly small.")
@@ -85,8 +126,8 @@ jobs:
           privacy = os.environ["PRIVACY_STATUS"]
           if privacy not in ("public", "private"):
               raise SystemExit("Invalid privacy selection.")
-
           title = os.environ["VIDEO_TITLE"].strip()[:100] or "AI Educational Short"
+
           credentials = Credentials(
               token=None,
               refresh_token=os.environ["YOUTUBE_REFRESH_TOKEN"],
@@ -97,13 +138,12 @@ jobs:
           )
           credentials.refresh(Request())
           youtube = build("youtube", "v3", credentials=credentials, cache_discovery=False)
-
           request = youtube.videos().insert(
               part="snippet,status",
               body={
                   "snippet": {
                       "title": title,
-                      "description": "AI-generated educational explainer Short.\n\nCreated with the Shorts-pipeline.",
+                      "description": "AI-generated educational explainer Short.\\n\\nCreated with the Shorts-pipeline.",
                       "tags": ["Shorts", "Education", "Science", "Technology"],
                       "categoryId": "27"
                   },
@@ -112,27 +152,18 @@ jobs:
                       "selfDeclaredMadeForKids": False
                   }
               },
-              media_body=MediaFileUpload(
-                  str(video),
-                  mimetype="video/mp4",
-                  chunksize=8 * 1024 * 1024,
-                  resumable=True
-              )
+              media_body=MediaFileUpload(str(video), mimetype="video/mp4", chunksize=8 * 1024 * 1024, resumable=True)
           )
-
           response = None
           while response is None:
               status, response = request.next_chunk()
               if status:
                   print("YouTube upload progress: {:.1f}%".format(status.progress() * 100))
-
           video_id = response.get("id")
           if not video_id:
               raise SystemExit("YouTube did not return a video ID.")
-          output = os.environ.get("GITHUB_OUTPUT")
-          if output:
-              with open(output, "a", encoding="utf-8") as f:
-                  f.write("video_id=" + video_id + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("video_id=" + video_id + "\\n")
           print("Uploaded video ID:", video_id)
           PY
 
@@ -148,19 +179,13 @@ jobs:
           python - <<'PY'
           import os
           import requests
-
-          token = os.environ["TELEGRAM_BOT_TOKEN"]
-          chat = os.environ["TELEGRAM_CHAT_ID"]
           video_id = os.environ["YOUTUBE_VIDEO_ID"]
-          privacy = os.environ["PRIVACY_STATUS"]
-          title = os.environ["VIDEO_TITLE"]
-          url = "https://youtu.be/" + video_id
-          message = ("✅ YouTube upload complete!\n\n" + title +
-                     "\nVisibility: " + privacy.upper() +
-                     "\n" + url)
+          message = ("✅ YouTube upload complete!\\n\\n" + os.environ["VIDEO_TITLE"] +
+                     "\\nVisibility: " + os.environ["PRIVACY_STATUS"].upper() +
+                     "\\nhttps://youtu.be/" + video_id)
           response = requests.post(
-              "https://api.telegram.org/bot" + token + "/sendMessage",
-              json={"chat_id": chat, "text": message},
+              "https://api.telegram.org/bot" + os.environ["TELEGRAM_BOT_TOKEN"] + "/sendMessage",
+              json={"chat_id": os.environ["TELEGRAM_CHAT_ID"], "text": message},
               timeout=20
           )
           response.raise_for_status()
@@ -182,7 +207,7 @@ jobs:
           if token and chat:
               requests.post(
                   "https://api.telegram.org/bot" + token + "/sendMessage",
-                  json={"chat_id": chat, "text": "❌ YouTube upload failed. Check the GitHub Actions run log. If the saved video is older than 7 days, generate it again."},
+                  json={"chat_id": chat, "text": "❌ YouTube upload failed. Check the GitHub Actions run log. A forwarded Telegram file must be 20 MB or smaller."},
                   timeout=20
               ).raise_for_status()
           PY
