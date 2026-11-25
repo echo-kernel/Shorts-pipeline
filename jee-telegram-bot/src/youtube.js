@@ -15,7 +15,7 @@ async function telegram(env, method, body) {
 
 export async function showYouTubeUploads(env, chatId) {
   const videos = await env.QUIZ_STATE.get("youtube-videos:" + chatId, "json") || [];
-  const recent = videos.filter(v => v && /^\\d+$/.test(String(v.run_id))).slice(0, 10);
+  const recent = videos.filter(v => v && /^\d+$/.test(String(v.run_id))).slice(0, 10);
   const rows = recent.map(v => [{
     text: "🎬 " + String(v.title || "Untitled video").slice(0, 48),
     callback_data: "ytpick:" + v.run_id
@@ -24,7 +24,7 @@ export async function showYouTubeUploads(env, chatId) {
   return telegram(env, "sendMessage", {
     chat_id: chatId,
     text: recent.length
-      ? "📁 PREVIOUS GENERATED VIDEOS\\nChoose a saved video, or forward an older MP4 below. Generated videos remain available for 7 days:"
+      ? "📁 PREVIOUS GENERATED VIDEOS\nChoose a saved video, or forward an older MP4 below. Generated videos remain available for 7 days:"
       : "📁 No recent generated videos are saved yet. You can forward an older video here:",
     reply_markup: { inline_keyboard: rows }
   });
@@ -106,7 +106,7 @@ export async function handleYouTubeCallback(env, callback) {
     }
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "📤 YouTube upload\\n\\n" + String(video.title || "Untitled video") + "\\n\\nChoose what should happen:",
+      text: "📤 YouTube upload\n\n" + String(video.title || "Untitled video") + "\n\nChoose what should happen:",
       reply_markup: { inline_keyboard: [
         [{ text: "🌍 Publish Public", callback_data: "ytupload:" + runId + ":public" }],
         [{ text: "🔒 Upload Private", callback_data: "ytupload:" + runId + ":private" }],
@@ -156,7 +156,7 @@ export async function handleYouTubeCallback(env, callback) {
   }
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: (privacy === "public" ? "🌍 Public" : "🔒 Private") + " YouTube upload started for:\\n" + String(video.title || "Untitled video") + "\\n\\nI'll message you when the upload finishes."
+    text: (privacy === "public" ? "🌍 Public" : "🔒 Private") + " YouTube upload started for:\n" + String(video.title || "Untitled video") + "\n\nI'll message you when the upload finishes."
   });
   return true;
 }
@@ -169,7 +169,7 @@ export async function handleYouTubeMessage(env, message) {
   if (!file) return false;
   await env.QUIZ_STATE.delete("youtube-waiting-video:" + chatId);
   const uploadId = String(Date.now());
-  const title = String(message.caption || "Previously generated AI Short").replace(/^🎬\\s*/, "").slice(0, 100);
+  const title = String(message.caption || "Previously generated AI Short").replace(/^🎬\s*/, "").slice(0, 100);
   await env.QUIZ_STATE.put("youtube-file:" + chatId + ":" + uploadId, JSON.stringify({
     file_id: file.file_id,
     file_size: Number(file.file_size || 0),
@@ -177,7 +177,7 @@ export async function handleYouTubeMessage(env, message) {
   }), { expirationTtl: 900 });
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "Video received: " + title + "\\nChoose the YouTube visibility:",
+    text: "Video received: " + title + "\nChoose the YouTube visibility:",
     reply_markup: { inline_keyboard: [
       [{ text: "🌍 Publish Public", callback_data: "ytfile:" + uploadId + ":public" }],
       [{ text: "🔒 Upload Private", callback_data: "ytfile:" + uploadId + ":private" }],
