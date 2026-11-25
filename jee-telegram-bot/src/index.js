@@ -1,5 +1,5 @@
 import questions from "../data/questions.js";
-import { showYouTubeUploads, handleYouTubeCallback, registerGeneratedVideo } from "./youtube.js";
+import { showYouTubeUploads, handleYouTubeCallback, handleYouTubeMessage, registerGeneratedVideo } from "./youtube.js";
 
 const TG = "https://api.telegram.org";
 const MAIN_MENU = {
@@ -1147,7 +1147,7 @@ export default {
       await env.QUIZ_STATE.put(updateKey, "1", { expirationTtl: 86400 });
     }
     try {
-      if (update.message) await handleMessage(env, update.message);
+      if (update.message) {\n        const handledYouTube = await handleYouTubeMessage(env, update.message);\n        if (!handledYouTube) await handleMessage(env, update.message);\n      }
       if (update.callback_query) await handleCallback(env, update.callback_query);
     } catch (error) {
       console.error("Update handling failed", String(error));
