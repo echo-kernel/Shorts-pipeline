@@ -27,7 +27,7 @@ export async function showYouTubeUploads(env, chatId) {
     text: "🎬 " + String(v.title || "Untitled video").slice(0, 48),
     callback_data: "ytpick:" + v.run_id
   }]);
-  rows.push([{ text: "📎 Forward an older video", callback_data: "ytforward" }]);
+  rows.push([{ text: "📎 Forward a generated video", callback_data: "ytforward" }]);
   return telegram(env, "sendMessage", {
     chat_id: chatId,
     text: recent.length
@@ -48,7 +48,7 @@ export async function handleYouTubeCallback(env, callback) {
     await env.QUIZ_STATE.put("youtube-waiting-video:" + chatId, "1", { expirationTtl: 900 });
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "📎 Forward the older generated video to this chat now. The Telegram Bot API download limit is 20 MB per file for this workflow."
+      text: "📎 Forward the generated video to this chat now. The Telegram Bot API download limit is 20 MB per file for this YouTube upload route."
     });
     return true;
   }
