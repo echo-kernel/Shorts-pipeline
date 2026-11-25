@@ -1,6 +1,11 @@
 name: Upload Selected Short to YouTube
 
 on:
+  push:
+    branches:
+      - jee-telegram-quiz
+    paths:
+      - "videos/*.mp4"
   workflow_dispatch:
     inputs:
       source:
@@ -44,6 +49,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      - name: Check out repository video
+        if: github.event_name == 'push'
+        uses: actions/checkout@v4
+
+      - name: Prepare automatically generated video
+        if: github.event_name == 'push'
+        run: |
+          mkdir -p youtube-upload
+          cp videos/*.mp4 youtube-upload/
+
       - name: Download selected generated video artifact
         if: inputs.source == 'artifact'
         uses: actions/download-artifact@v4
@@ -101,8 +116,8 @@ jobs:
           YOUTUBE_CLIENT_ID: ${{ secrets.YOUTUBE_CLIENT_ID }}
           YOUTUBE_CLIENT_SECRET: ${{ secrets.YOUTUBE_CLIENT_SECRET }}
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
-          VIDEO_TITLE: ${{ inputs.title }}
-          PRIVACY_STATUS: ${{ inputs.privacy_status }}
+          VIDEO_TITLE: ${{ inputs.title || github.event.head_commit.message }}
+          PRIVACY_STATUS: ${{ inputs.privacy_status || 'public' }}
         run: |
           python - <<'PY'
           import os
@@ -127,7 +142,9 @@ jobs:
           privacy = os.environ["PRIVACY_STATUS"]
           if privacy not in ("public", "private"):
               raise SystemExit("Invalid privacy selection.")
-          title = os.environ["VIDEO_TITLE"].strip()[:100] or "AI Educational Short"
+          title = os.environ.get("VIDEO_TITLE", "").strip()[:100]
+          if not title or title.startswith("Upload generated video "):
+              title = video.stem.replace("_", " ").replace("-", " ")[:100] or "AI Educational Short"
 
           credentials = Credentials(
               token=None,
@@ -172,7 +189,7 @@ jobs:
         if: success()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ inputs.chat_id }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           YOUTUBE_VIDEO_ID: ${{ steps.youtube.outputs.video_id }}
           PRIVACY_STATUS: ${{ inputs.privacy_status }}
           VIDEO_TITLE: ${{ inputs.title }}
