@@ -1,5 +1,9 @@
 const TG = "https://api.telegram.org";
 
+function isYouTubeOwner(env, chatId) {
+  return Boolean(env.OWNER_CHAT_ID && String(env.OWNER_CHAT_ID) === String(chatId));
+}
+
 async function telegram(env, method, body) {
   const response = await fetch(TG + "/bot" + env.TELEGRAM_TOKEN + "/" + method, {
     method: "POST",
@@ -14,6 +18,9 @@ async function telegram(env, method, body) {
 }
 
 export async function showYouTubeUploads(env, chatId) {
+  if (!isYouTubeOwner(env, chatId)) {
+    return telegram(env, "sendMessage", { chat_id: chatId, text: "YouTube uploads are available only to the bot owner." });
+  }
   const videos = await env.QUIZ_STATE.get("youtube-videos:" + chatId, "json") || [];
   const recent = videos.filter(v => v && /^\d+$/.test(String(v.run_id))).slice(0, 10);
   const rows = recent.map(v => [{
@@ -33,6 +40,10 @@ export async function showYouTubeUploads(env, chatId) {
 export async function handleYouTubeCallback(env, callback) {
   const data = String(callback.data || "");
   const chatId = callback.message?.chat?.id;
+  if (data.startsWith("yt") && !isYouTubeOwner(env, chatId)) {
+    await telegram(env, "sendMessage", { chat_id: chatId, text: "YouTube uploads are available only to the bot owner." });
+    return true;
+  }
   if (data === "ytforward") {
     await env.QUIZ_STATE.put("youtube-waiting-video:" + chatId, "1", { expirationTtl: 900 });
     await telegram(env, "sendMessage", {
@@ -163,6 +174,7 @@ export async function handleYouTubeCallback(env, callback) {
 
 export async function handleYouTubeMessage(env, message) {
   const chatId = message.chat.id;
+  if (!isYouTubeOwner(env, chatId)) return false;
   const waiting = await env.QUIZ_STATE.get("youtube-waiting-video:" + chatId);
   if (!waiting) return false;
   const file = message.video || (message.document && String(message.document.mime_type || "").startsWith("video/") ? message.document : null);
