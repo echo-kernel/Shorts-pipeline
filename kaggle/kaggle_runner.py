@@ -4,7 +4,6 @@ import sys
 import subprocess
 import shutil
 import json
-import traceback
 import requests
 from pathlib import Path
 
@@ -13,42 +12,6 @@ BRANCH = "jee-telegram-quiz"
 ROOT = Path("/kaggle/working/Shorts-pipeline")
 
 print("AI HISTORICAL SHORTS - KAGGLE RUNNER")
-
-# Telegram credentials are stored in Kaggle Secrets, never embedded in GitHub code.
-def kaggle_secret(name):
-    try:
-        from kaggle_secrets import UserSecretsClient
-        return UserSecretsClient().get_secret(name) or ""
-    except Exception:
-        return ""
-
-TELEGRAM_TOKEN = kaggle_secret("TELEGRAM_BOT_TOKEN")
-TELEGRAM_CHAT = str(globals().get("VIDEO_CHAT_ID", "") or kaggle_secret("TELEGRAM_CHAT_ID")).strip()
-
-def telegram_message(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
-        print("Telegram notification skipped: Kaggle Telegram secrets are unavailable.")
-        return
-    import requests
-    response = requests.post(
-        "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage",
-        data={"chat_id": TELEGRAM_CHAT, "text": str(message)[:3900]},
-        timeout=30
-    )
-    response.raise_for_status()
-    result = response.json()
-    if not result.get("ok"):
-        raise RuntimeError("Telegram sendMessage failed: " + str(result))
-
-def report_uncaught_exception(exc_type, exc_value, exc_tb):
-    details = "".join(traceback.format_exception(exc_type, exc_value, exc_tb))[-2600:]
-    try:
-        telegram_message("❌ AI explainer generation failed on Kaggle.\n\n" + details)
-    except Exception as notify_error:
-        print("Could not send Kaggle failure notification:", type(notify_error).__name__, str(notify_error))
-    sys.__excepthook__(exc_type, exc_value, exc_tb)
-
-sys.excepthook = report_uncaught_exception
 
 # 1. Download the exact project branch from GitHub.
 # Refresh an existing checkout too, so reused Kaggle sessions cannot keep stale code.
@@ -178,42 +141,3 @@ if github_response.status_code not in (200, 201):
     raise RuntimeError("GitHub video transfer failed: HTTP " + str(github_response.status_code) + " " + github_response.text[:700])
 print("GitHub received MP4:", github_path)
 print("GitHub push will trigger automatic public YouTube upload.")
-
-
-# Telegram is notification and feedback only; YouTube receives the MP4 from GitHub.
-if not TELEGRAM_TOKEN or not TELEGRAM_CHAT:
-    raise RuntimeError("Video generated and sent to GitHub, but Telegram notification credentials are missing.")
-
-story = json.loads(story_payload)
-topic = str(story.get("topic") or "AI Educational Short")
-title = str(story.get("title") or "AI Educational Short")
-keyboard = {
-    "inline_keyboard": [
-        [
-            {"text": "👍 Good video", "callback_data": "video_feedback:good"},
-            {"text": "👎 Poor video", "callback_data": "video_feedback:poor"}
-        ],
-        [{"text": "📝 Report a problem", "callback_data": "video_feedback:report"}]
-    ]
-}
-message = (
-    "🎬 Video generated successfully!\n\n"
-    "Topic: " + topic + "\n"
-    "Title: " + title + "\n\n"
-    "The MP4 has been sent to GitHub for automatic YouTube publishing. "
-    "I will send another message when YouTube upload finishes."
-)
-response = requests.post(
-    "https://api.telegram.org/bot" + TELEGRAM_TOKEN + "/sendMessage",
-    data={
-        "chat_id": TELEGRAM_CHAT,
-        "text": message[:3900],
-        "reply_markup": json.dumps(keyboard, ensure_ascii=False)
-    },
-    timeout=30
-)
-response.raise_for_status()
-result = response.json()
-if not result.get("ok"):
-    raise RuntimeError("Telegram notification failed: " + str(result))
-print("SUCCESS: Telegram notification sent; no video file was sent to Telegram.")
