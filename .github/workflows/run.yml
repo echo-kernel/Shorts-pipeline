@@ -18,12 +18,6 @@ on:
         required: false
         type: string
         default: ""
-  push:
-    branches:
-      - main
-    paths:
-      - "kaggle/**"
-      - ".github/workflows/run.yml"
 
 permissions:
   contents: write
