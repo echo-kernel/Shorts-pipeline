@@ -41,8 +41,9 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-PRIMARY_TTS_VOICE = "hi-IN-KunalNeural"
-FALLBACK_TTS_VOICE = "hi-IN-MadhurNeural"
+PRIMARY_TTS_VOICE = "en-US-AndrewMultilingualNeural"
+TTS_RATE = "+10%"
+TTS_PITCH = "-2Hz"
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
@@ -405,7 +406,8 @@ async def create_voice(text, filename, voice):
     communicate = edge_tts.Communicate(
         text=text,
         voice=voice,
-        rate="-3%",
+        rate=TTS_RATE,
+        pitch=TTS_PITCH,
         volume="+0%"
     )
 
@@ -520,54 +522,22 @@ def make_srt(text, duration, filename):
 def create_clips(scenes, target_duration):
     clips = []
     if not scenes:
-        raise RuntimeError("No scene prompts were supplied.")
-
-    # Generate enough unique footage to cover the narration. Never loop a
-    # short visual sequence to fill a much longer voiceover.
+        raise RuntimeError("No scenes supplied.")
     scene_duration = math.ceil(float(target_duration) / len(scenes))
     if scene_duration > 14:
-        raise RuntimeError(
-            f"Narration needs {scene_duration}s per scene, above the 14s limit. "
-            "Generate more connected scenes or shorten the narration."
-        )
-
+        raise RuntimeError("Narration too long for scene count; add scenes or shorten narration.")
     for index, scene in enumerate(scenes, start=1):
-
+        if isinstance(scene, str):
+            scene = {"mode": "render", "visual_prompt": scene}
         output = WORK_DIR / f"scene_{index}.mp4"
-
-        percent = 25 + int(index * 35 / len(scenes))
-
-        tracker.start_stage(
-            percent,
-            f"Generating scene {index}/{len(scenes)}",
-            f"Completed scenes: {index - 1}/{len(scenes)}; target clip: {scene_duration}s"
-        )
-
-        def retry_callback(
-            attempt,
-            maximum,
-            error,
-            wait
-        ):
-            tracker.retries += 1
-
-            tracker.update(
-                percent,
-                f"Retrying scene {index}/4",
-                f"Attempt {attempt}/{maximum} failed.\n"
-                f"Reason: {error[:300]}\n"
-                f"Retrying in {wait}s"
-            )
-
-        generate_video(
-            prompt=scene,
-            output_path=output,
-            duration=scene_duration,
-            on_retry=retry_callback
-        )
-
+        if scene.get("mode", "render") == "map":
+            from visual_engine import render_map_scene
+            render_map_scene(scene, output, scene_duration)
+        else:
+            generate_video(prompt=scene["visual_prompt"], output_path=output, duration=scene_duration)
+            from visual_engine import apply_cinematic_camera
+            apply_cinematic_camera(output, scene_duration)
         clips.append(output)
-
     return clips
 
 
@@ -775,9 +745,7 @@ def main():
             "Generating Hindi narration"
         )
 
-        voice = generate_voice(
-            story["voiceover"]
-        )
+        voice = generate_voice(" ".join(scene.get("tts_text", "") for scene in story["scenes"]) or story["voiceover"])
 
         tracker.start_stage(
             25,
@@ -787,10 +755,7 @@ def main():
         narration_duration = get_duration(voice)
         print(f"Narration duration: {narration_duration:.2f}s")
 
-        clips = create_clips(
-            story["scenes"],
-            narration_duration
-        )
+        clips = create_clips(story["scenes"], narration_duration)
 
         tracker.start_stage(
             65,
