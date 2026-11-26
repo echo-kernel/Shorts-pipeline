@@ -40,12 +40,16 @@ def render_map_scene(scene, output, duration):
         progress = frame / max(1, frame_count - 1)
         eased = 1 - (1 - progress) ** 3
         fig, ax = plt.subplots(figsize=(6, 10), dpi=180)
-        ax.set_xlim(cx - span, cx + span); ax.set_ylim(cy - span, cy + span)
+        animated_span = span * (1.0 - 0.22 * eased)\n        ax.set_xlim(cx - animated_span, cx + animated_span); ax.set_ylim(cy - animated_span, cy + animated_span)
         ax.set_facecolor('#10151f')
         try:
             ctx.add_basemap(ax, source=ctx.providers.CartoDB.DarkMatter, crs='EPSG:3857', attribution=False, zoom=zoom)
         except Exception as exc:
-            print('Map tile fallback:', exc)
+            print('CartoDB tile fallback:', exc)
+            try:
+                ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, crs='EPSG:3857', attribution=False, zoom=zoom)
+            except Exception as fallback_exc:
+                print('Esri imagery fallback:', fallback_exc)
         if len(route_xy) >= 2:
             line = LineString(route_xy); xs, ys = line.xy
             count = max(2, int(len(xs) * eased))
