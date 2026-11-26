@@ -52,9 +52,10 @@ jobs:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
         run: |
           set -e
-          for name in GEMINI_API_KEY KAGGLE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+          for name in GEMINI_API_KEY KAGGLE_API_TOKEN TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID VIDEO_GITHUB_TOKEN; do
             value="${!name}"
             if [ -z "$value" ]; then
               echo "Required GitHub Actions secret/input is missing: $name"
@@ -378,7 +379,43 @@ jobs:
           git add videos/*.mp4
           git commit -m "Add completed Kaggle educational Short"
           git push
-          echo "Video committed. This push triggers upload-youtube.yml."
+          echo "Video committed to the repository."
+
+      - name: Start YouTube upload workflow
+        env:
+          VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -euo pipefail
+          VIDEO_TITLE="$(python -c 'import json; print(json.load(open("kaggle/story.json", encoding="utf-8")).get("title", "AI Educational Short"))')"
+          export VIDEO_TITLE
+          python - <<'PY'
+          import json, os, urllib.request
+          payload = {
+              "ref": "jee-telegram-quiz",
+              "inputs": {
+                  "source": "repository",
+                  "privacy_status": "public",
+                  "chat_id": os.environ["TELEGRAM_CHAT_ID"],
+                  "title": os.environ["VIDEO_TITLE"]
+              }
+          }
+          request = urllib.request.Request(
+              "https://api.github.com/repos/echo-kernel/Shorts-pipeline/actions/workflows/upload-youtube.yml/dispatches",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": "Bearer " + os.environ["VIDEO_GITHUB_TOKEN"],
+                  "X-GitHub-Api-Version": "2022-11-28",
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              if response.status not in (201, 204):
+                  raise SystemExit("Could not dispatch YouTube workflow: HTTP " + str(response.status))
+          print("YouTube upload workflow dispatched.")
+          PY
 
       - name: Notify Telegram if submission workflow fails
         if: failure()
