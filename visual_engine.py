@@ -46,7 +46,8 @@ def render_map_scene(scene, output, duration):
         progress = frame / max(1, frame_count - 1)
         eased = 1 - (1 - progress) ** 3
         fig, ax = plt.subplots(figsize=(6, 10), dpi=180)
-        animated_span = span * (1.0 - 0.22 * eased)\n        ax.set_xlim(cx - animated_span, cx + animated_span); ax.set_ylim(cy - animated_span, cy + animated_span)
+        animated_span = span * (1.0 - 0.22 * eased)
+        ax.set_xlim(cx - animated_span, cx + animated_span); ax.set_ylim(cy - animated_span, cy + animated_span)
         ax.set_facecolor('#10151f')
         try:
             ctx.add_basemap(ax, source=ctx.providers.CartoDB.DarkMatter, crs='EPSG:3857', attribution=False, zoom=zoom)
@@ -63,7 +64,7 @@ def render_map_scene(scene, output, duration):
             line = LineString(route_xy); xs, ys = line.xy
             count = max(2, int(len(xs) * eased))
             ax.plot(xs[:count], ys[:count], color='#00d9ff', linewidth=9, alpha=.18)
-            ax.plot(xs[:count], ys[:count], color='#62efff', linewidth=2.5, linestyle=(0, (5, 3)))
+            ax.plot(xs[:count], ys[:count], color='#62efff', linewidth=2.5, linestyle=(progress * 8.0, (5, 3)))
             ax.scatter([xs[0]], [ys[0]], s=60, c='white', edgecolors='#00d9ff', linewidths=2, zorder=5)
             if count >= len(xs): ax.scatter([xs[-1]], [ys[-1]], s=60, c='white', edgecolors='#00d9ff', linewidths=2, zorder=5)
         ax.axis('off'); fig.subplots_adjust(0, 0, 1, 1)
