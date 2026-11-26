@@ -36,6 +36,11 @@ def render_map_scene(scene, output, duration):
     cx, cy = transformer.transform(lon, lat)
     span = 20037508.34 / (2 ** max(1, zoom - 1))
     route_xy = [transformer.transform(float(p[1]), float(p[0])) for p in route if isinstance(p, list) and len(p) == 2]
+    borders = None
+    try:
+        borders = gpd.read_file("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson").to_crs("EPSG:3857")
+    except Exception as border_exc:
+        print("Country border overlay unavailable:", border_exc)
     frame_count = max(24, int(duration * 24))
     for frame in range(frame_count):
         progress = frame / max(1, frame_count - 1)
@@ -51,12 +56,9 @@ def render_map_scene(scene, output, duration):
                 ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, crs='EPSG:3857', attribution=False, zoom=zoom)
             except Exception as fallback_exc:
                 print('Esri imagery fallback:', fallback_exc)
-        try:
-            borders = gpd.read_file("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson").to_crs("EPSG:3857")
+        if borders is not None:
             borders.boundary.plot(ax=ax, color="#00d9ff", linewidth=5, alpha=0.16, zorder=3)
             borders.boundary.plot(ax=ax, color="#65eaff", linewidth=1.0, alpha=0.75, zorder=4)
-        except Exception as border_exc:
-            print("Country border overlay unavailable:", border_exc)
         if len(route_xy) >= 2:
             line = LineString(route_xy); xs, ys = line.xy
             count = max(2, int(len(xs) * eased))
