@@ -435,7 +435,7 @@ def make_srt(text, duration, filename):
     # Keep caption chunks aligned to sentence boundaries where possible.
     # Allocate display time in proportion to each chunk's word count instead
     # of giving a short final chunk the same duration as a long one.
-    sentences = re.split(r"(?<=[.!?।])\\s+", text.strip())
+    sentences = re.split(r"(?<=[.!?।])\s+", text.strip())
     groups = []
 
     for sentence in sentences:
