@@ -142,16 +142,10 @@ jobs:
                       )
                       data = json.loads(response.text.strip())
                       audit_prompt = (
-                          "You are a strict science and engineering fact-checker. Audit this educational "
-                          "Short for scientific, engineering and physics errors. Check causal steps, force "
-                          "directions, gravity, inertia, friction, lift, thrust, pressure, energy conversion, "
-                          "scale and mechanical movement wherever relevant. Check that visuals depict the "
-                          "narration accurately and that all seven scenes form a physically plausible sequence. "
-                          "Remove or qualify claims you cannot confidently verify. Do not invent numbers, "
-                          "specifications, formulas, dates or mechanisms. Preserve Hindi narration and English "
-                          "scene prompts. Return corrected JSON only, with exactly these keys: topic, title, "
-                          "era_label, character_bible, voiceover, scenes. scenes must contain exactly seven "
-                          "non-empty strings. Draft to audit: "
+                          "Fact-check science, engineering, history and geography. Preserve keys topic,title,voiceover,scenes "
+                          "and each scene object keys mode,visual_prompt,tts_text,caption_text,map_center,map_zoom,route_points. "
+                          "Keep tts_text in Devanagari Hindi and caption_text in Roman Hinglish. Use map only for explicit geographic scenes. "
+                          "Correct inaccurate claims, physical mechanisms, scene continuity and map coordinates. Return corrected JSON only. Draft: "
                           + json.dumps(data, ensure_ascii=False)
                       )
                       audited = client.models.generate_content(
