@@ -327,8 +327,58 @@ jobs:
           else:
               raise SystemExit("Timed out after 350 minutes waiting for Kaggle. Check the Kaggle notebook output.")
 
-          print("The Kaggle runner handles the MP4 GitHub push and Telegram completion message.")
+          print("Kaggle completed. Downloading the notebook output through the Kaggle API.")
           PY
+
+      - name: Download completed video from Kaggle
+        env:
+          KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p kaggle-download
+          kaggle kernels output apuravjadhav/shorts-pipeline-wan -p kaggle-download
+          echo "Downloaded Kaggle output:"
+          find kaggle-download -type f -printf '%p (%s bytes)\\n'
+
+      - name: Validate and add video to repository
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import re
+          import shutil
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path("kaggle-download")
+          candidates = [p for p in root.rglob("*.mp4") if p.is_file()]
+          if not candidates:
+              raise SystemExit("Kaggle output download completed, but no MP4 was found.")
+          preferred = [p for p in candidates if p.name == "historical_short.mp4"]
+          source = preferred[0] if preferred else max(candidates, key=lambda p: p.stat().st_size)
+          size = source.stat().st_size
+          if size < 10000:
+              raise SystemExit(f"Downloaded MP4 is too small ({size} bytes): {source}")
+
+          story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
+          topic = str(story.get("topic") or "educational-short")
+          safe_topic = re.sub(r"[^A-Za-z0-9_-]+", "-", topic).strip("-")[:55] or "educational-short"
+          stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+          destination = Path("videos") / f"{stamp}-{safe_topic}.mp4"
+          destination.parent.mkdir(parents=True, exist_ok=True)
+          shutil.copy2(source, destination)
+          print(f"Repository video ready: {destination} ({size} bytes)")
+          PY
+
+      - name: Commit video to repository
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add videos/*.mp4
+          git commit -m "Add completed Kaggle educational Short"
+          git push
+          echo "Video committed. This push triggers upload-youtube.yml."
 
       - name: Notify Telegram if submission workflow fails
         if: failure()
