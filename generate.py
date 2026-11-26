@@ -727,7 +727,7 @@ def main():
         final_video = assemble_final_video(
             joined,
             voice,
-            story["voiceover"]
+            " ".join(scene["caption_text"] for scene in story["scenes"])
         )
 
         tracker.start_stage(
