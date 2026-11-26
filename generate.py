@@ -441,8 +441,8 @@ def make_srt(text, duration, filename):
     for sentence in sentences:
         remaining = sentence.split()
         while remaining:
-            groups.append(remaining[:7])
-            remaining = remaining[7:]
+            groups.append(remaining[:2])
+            remaining = remaining[2:]
 
     if not groups:
         raise RuntimeError("Narration has no words.")
@@ -557,73 +557,24 @@ def join_clips(clips):
 
 
 def assemble_final_video(joined, voice, narration):
-
     voice_duration = get_duration(voice)
     visual_duration = get_duration(joined)
     if visual_duration + 0.25 < voice_duration:
-        raise RuntimeError(
-            f"Visual footage is too short ({visual_duration:.1f}s) for narration "
-            f"({voice_duration:.1f}s). Refusing to repeat scenes."
-        )
-
-    subtitles = WORK_DIR / "captions.srt"
-
-    make_srt(
-        narration,
-        voice_duration,
-        subtitles
-    )
-
-    # IMPORTANT FIX:
-    # FFmpeg must use the actual subtitle file path.
-    subtitle_path = subtitles.resolve().as_posix()
-
-    if not subtitles.exists():
-        raise RuntimeError(
-            f"Subtitle file missing: {subtitle_path}"
-        )
-
-    print("Subtitle file:", subtitle_path)
-
-    final_video = OUTPUT_DIR / "historical_short.mp4"
-
-    subtitle_filter = (
-        f"subtitles='{subtitle_path}':"
-        "force_style='FontName=DejaVu Sans,"
-        "FontSize=18,PrimaryColour=&H00FFFFFF,"
-        "OutlineColour=&H00000000,BorderStyle=1,"
-        "Outline=2,Shadow=1,Alignment=2,MarginV=120'"
-    )
-
-    run_command([
-        "ffmpeg", "-y",
-        "-i", str(joined.resolve()),
-        "-i", str(voice.resolve()),
-        "-vf", subtitle_filter,
-        "-map", "0:v:0",
-        "-map", "1:a:0",
-        "-t", str(voice_duration),
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-shortest",
-        "-movflags", "+faststart",
-        str(final_video.resolve())
-    ])
-
-    if (
-        not final_video.exists()
-        or final_video.stat().st_size < 10000
-    ):
-        raise RuntimeError(
-            "Final video was not created correctly."
-        )
-
+        raise RuntimeError(f'Visual footage ({visual_duration:.1f}s) is shorter than narration ({voice_duration:.1f}s).')
+    subtitles = WORK_DIR / 'captions.srt'
+    make_srt(narration, voice_duration, subtitles)
+    subtitle_path = subtitles.resolve().as_posix().replace(':', '\\\\:')
+    music = WORK_DIR / 'documentary_bed.wav'
+    whoosh = WORK_DIR / 'transition_whoosh.wav'
+    cut = max(1.0, visual_duration / max(1, len(json.loads((OUTPUT_DIR / 'story.json').read_text(encoding='utf-8')).get('scenes', []))))
+    run_command(['ffmpeg','-y','-f','lavfi','-i',f'anoisesrc=color=pink:duration={voice_duration}:amplitude=0.018','-af',f'lowpass=f=180,afade=t=in:st=0:d=2,afade=t=out:st={max(0,voice_duration-3)}:d=3',str(music)])
+    run_command(['ffmpeg','-y','-f','lavfi','-i',f'anoisesrc=color=white:duration={voice_duration}:amplitude=0.05','-af',f'highpass=f=700,lowpass=f=4500,volume=\'if(lt(mod(t,{cut}),0.24),0.14,0)\'',str(whoosh)])
+    final_video = OUTPUT_DIR / 'historical_short.mp4'
+    filters = '[2:a]volume=0.10[bed];[3:a]volume=0.6[fx];[1:a][bed][fx]amix=inputs=3:duration=first:dropout_transition=1[aout]'
+    subtitle_filter = f"subtitles='{subtitle_path}':force_style='FontName=DejaVu Sans,FontSize=27,Bold=1,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=5,Shadow=3,Alignment=5,MarginV=0'"
+    run_command(['ffmpeg','-y','-i',str(joined.resolve()),'-i',str(voice.resolve()),'-i',str(music),'-i',str(whoosh),'-filter_complex',filters,'-vf',subtitle_filter,'-map','0:v:0','-map','[aout]','-t',str(voice_duration),'-c:v','libx264','-preset','veryfast','-crf','21','-pix_fmt','yuv420p','-c:a','aac','-b:a','192k','-shortest','-movflags','+faststart',str(final_video.resolve())])
+    if not final_video.exists() or final_video.stat().st_size < 10000: raise RuntimeError('Final MP4 was not created correctly.')
     return final_video
-
 
 def send_telegram(video, title):
 
