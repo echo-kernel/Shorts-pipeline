@@ -15,6 +15,7 @@ on:
         options:
           - artifact
           - telegram
+          - repository
       run_id:
         description: "GitHub Actions run ID (for generated videos)"
         required: false
@@ -50,7 +51,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Check out repository video
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.source == 'repository'
         uses: actions/checkout@v4
 
       - name: Prepare automatically generated video
@@ -65,6 +66,19 @@ jobs:
           fi
           cp "$VIDEO_PATH" youtube-upload/video.mp4
           echo "Selected newly generated video: $VIDEO_PATH"
+
+      - name: Prepare manually dispatched repository video
+        if: inputs.source == 'repository'
+        run: |
+          set -euo pipefail
+          mkdir -p youtube-upload
+          VIDEO_PATH="$(find videos -maxdepth 1 -type f -name '*.mp4' -printf '%T@ %p\\n' | sort -nr | head -n 1 | cut -d' ' -f2-)"
+          if [ -z "$VIDEO_PATH" ]; then
+            echo "No MP4 found in videos/."
+            exit 1
+          fi
+          cp "$VIDEO_PATH" youtube-upload/video.mp4
+          echo "Selected repository video: $VIDEO_PATH"
 
       - name: Download selected generated video artifact
         if: inputs.source == 'artifact'
@@ -147,7 +161,7 @@ jobs:
           if not videos:
               raise SystemExit("No MP4 found. The artifact may have expired, or the Telegram file could not be downloaded.")
           source = os.getenv("VIDEO_SOURCE", "push")
-          if source == "push":
+          if source in ("push", "repository"):
               video = Path("youtube-upload/video.mp4")
               if not video.exists():
                   raise SystemExit("The MP4 from the triggering commit was not prepared.")
