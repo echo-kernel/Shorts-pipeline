@@ -163,13 +163,19 @@ jobs:
                       print("Independent science/physics audit completed.")
                       if not isinstance(data, dict):
                           raise ValueError("Response is not a JSON object.")
-                      if not data.get("topic") or not data.get("title") or not data.get("voiceover"):
-                          raise ValueError("Missing topic, title or Hindi voiceover.")
+                      if not data.get("topic") or not data.get("title"):
+                          raise ValueError("Missing topic or title.")
                       scenes = data.get("scenes")
-                      if not isinstance(scenes, list) or len(scenes) != 7:
-                          raise ValueError("Expected exactly seven scene prompts.")
-                      if not all(isinstance(x, str) and x.strip() for x in scenes):
-                          raise ValueError("One or more scene prompts are empty.")
+                      if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
+                          raise ValueError("Expected 6–9 structured scene objects.")
+                      import re
+                      for i, scene in enumerate(scenes, 1):
+                          if not isinstance(scene, dict): raise ValueError(f"Scene {i} must be an object.")
+                          for key in ("mode", "visual_prompt", "tts_text", "caption_text"):
+                              if not isinstance(scene.get(key), str) or not scene[key].strip(): raise ValueError(f"Scene {i} missing {key}.")
+                          if scene["mode"] not in ("render", "map"): raise ValueError(f"Scene {i} invalid mode.")
+                          if re.search(r"[A-Za-z]", scene["tts_text"]): raise ValueError(f"Scene {i} tts_text must be Devanagari Hindi.")
+                          if scene["mode"] == "map" and not isinstance(scene.get("map_center"), list): raise ValueError(f"Map scene {i} requires map_center.")
                       data["gemini_model"] = model
                       Path("kaggle/story.json").write_text(
                           json.dumps(data, ensure_ascii=False, separators=(",", ":")),
