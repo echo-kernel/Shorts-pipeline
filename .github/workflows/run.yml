@@ -100,65 +100,20 @@ jobs:
               if feedback_text else ""
           )
           prompt = f"""
-          Create an accurate, engaging educational YouTube Short.
+          Create an accurate vertical 9:16 educational documentary Short.
           {topic_instruction}
-
-          Return ONLY valid JSON with this exact structure:
-          {{
-            "topic": "The specific topic selected or requested",
-            "title": "Short engaging question-style title",
-            "era_label": "",
-            "character_bible": "",
-            "voiceover": "Natural conversational Hindi explainer narration, approximately 105 to 120 words",
-            "scenes": [
-              "Scene 1: show the object or phenomenon and pose the central question",
-              "Scene 2: introduce the first important component",
-              "Scene 3: explain the next step in the process",
-              "Scene 4: show how the main mechanism works",
-              "Scene 5: explain what happens during operation",
-              "Scene 6: show the result or an important real-world detail",
-              "Scene 7: memorable visual summary"
-            ]
-          }}
-
-          Requirements:
-          - Explain how something works, how it is built, or why a phenomenon happens.
-          - Prefer visually interesting subjects: trains, aeroplanes, forts, bridges, dams,
-            engines, electricity, rockets, space and everyday technology.
-          - Treat scientific, engineering and physics accuracy as the highest priority; entertainment is secondary.
-          - Verify every mechanism against established science and engineering before writing.
-          - For motion, correctly represent forces, gravity, inertia, friction, lift, thrust, pressure,
-            energy conversion, momentum and cause-and-effect wherever relevant.
-          - Never depict impossible motion, unsupported mechanisms, incorrect component placement,
-            physically impossible scale, or objects moving without a force.
-          - For aircraft, distinguish lift from thrust and show airflow and control surfaces plausibly;
-            for trains, show wheel-rail contact, traction and braking plausibly; for rockets, show thrust
-            in the correct direction and do not imply rockets push against air in space.
-          - Do not invent numerical values, speeds, temperatures, dates, technical specifications,
-            formulas or quotes. Include numbers only when confident they are correct and contextualized.
-          - If a detail is uncertain, omit it or describe it cautiously instead of guessing.
-          - Do not simplify an explanation so far that it becomes scientifically false.
-          - Make all seven scenes a connected, step-by-step explanation in the correct causal order.
-          - Structure scenes as a visual lesson: establish the whole object, reveal key components, show the mechanism operating,
-            explain cause-and-effect, show the result, then recap the complete process.
-          - Each scene must visually demonstrate the exact narration point; no generic filler or unrelated repeated shots.
-          - For machinery, specify which component moves, what causes it to move, and what the viewer should observe.
-          - Use clean cutaways and exploded assemblies only when they improve understanding; preserve believable engineering relationships.
-          - Use HYBRID 3D educational animation: premium photorealistic CGI combined with cinematic documentary camera language.
-          - Show real mechanisms clearly using exterior shots, internal cutaways, transparent sections and exploded views when useful.
-          - Maintain consistent object geometry, proportions, materials, colors and component placement across all seven scenes.
-          - Use physically based materials, realistic lighting, accurate scale, mechanically correct parts and plausible motion.
-          - Video-generation visuals can hallucinate: describe one simple, visible action per clip, avoid complex simultaneous motion,
-            and never rely on generated text, labels, arrows or symbols to explain science; overlays are added during editing.
-          - Perform a separate fact-check pass: identify inaccurate claims, missing causal steps and
-            visuals that contradict the narration; revise them before returning JSON.
-          - No random letters, punctuation, labels, captions, logos, watermarks or readable text
-            inside generated footage. Text overlays are handled separately.
-          - Prefer wide and medium shots; avoid extreme face close-ups and lip-sync.
-          - Vertical 9:16 composition, main action centered for mobile viewing.
-          - Hindi narration, English scene prompts.
-          - Set era_label only when a specific year is essential; otherwise use an empty string.
-          - Return JSON only, without Markdown fences.
+          Return ONLY JSON with topic,title,voiceover,scenes. scenes must contain 6–9 objects:
+          {{"topic":"...","title":"...","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"English cinematic 3D CGI prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
+          Each scene must include mode, visual_prompt, tts_text and caption_text.
+          tts_text MUST be natural spoken Hindi in Devanagari only. Transliterate English technical terms and names naturally into Devanagari; avoid Roman Hindi.
+          caption_text MUST be clean Hinglish/Roman Hindi, short and faithful to tts_text.
+          Scene tts_text fields combined are the complete narration and must flow naturally.
+          Use mode="map" ONLY for countries, cities, borders, geographic locations, travel, shipping or trade routes. All science, engineering, technology, history, machines, forts, vehicles and concepts use mode="render".
+          Map scenes require map_center [latitude,longitude], map_zoom integer 3–12, and route_points as [latitude,longitude] pairs when showing a route; otherwise [].
+          Render scenes require detailed premium photorealistic 3D documentary CGI prompts, realistic materials, lighting, scale and one simple visible action. No generated text, labels, logos or watermarks.
+          Keep connected scenes consistent in object geometry, materials and location. Explain mechanisms in causal order and obey real physics.
+          Total narration about 100–125 Hindi words. No filler, repeated visuals, impossible physics or unsupported claims.
+          Return JSON only, without Markdown fences.
           {feedback_instruction}
           """
           client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
