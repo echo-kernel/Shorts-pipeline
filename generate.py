@@ -415,66 +415,14 @@ async def create_voice(text, filename, voice):
 
 
 def generate_voice(text):
-    voice_file = WORK_DIR / "narration.mp3"
-    voice_errors = []
-
-    # Kunal is preferred. Retry transient Edge TTS failures with longer
-    # backoff before switching to Madhur as a last-resort fallback.
-    for voice, maximum_attempts in (
-        (PRIMARY_TTS_VOICE, 4),
-        (FALLBACK_TTS_VOICE, 2)
-    ):
-        for attempt in range(1, maximum_attempts + 1):
-            try:
-                if voice_file.exists():
-                    voice_file.unlink()
-
-                print(
-                    f"Generating Hindi narration with {voice} "
-                    f"(attempt {attempt}/{maximum_attempts})"
-                )
-
-                asyncio.run(create_voice(text, voice_file, voice))
-
-                if not voice_file.exists() or voice_file.stat().st_size < 1000:
-                    raise RuntimeError(f"{voice} returned no usable audio.")
-
-                selected_voice = OUTPUT_DIR / "voice_used.txt"
-                selected_voice.write_text(voice + "\n", encoding="utf-8")
-                print(f"VOICE_USED={voice}")
-                print(f"Voice generation successful: {voice}")
-                return voice_file
-
-            except Exception as exc:
-                error = (
-                    f"{voice} attempt {attempt}/{maximum_attempts}: "
-                    f"{type(exc).__name__}: {exc}"
-                )
-                voice_errors.append(error)
-                print(f"⚠️ {error}")
-                tracker.retries += 1
-
-                if attempt < maximum_attempts:
-                    wait = min(8 * (2 ** (attempt - 1)), 30)
-                    tracker.update(
-                        18,
-                        "Retrying Hindi narration",
-                        f"{voice} failed ({type(exc).__name__}). "
-                        f"Retry {attempt + 1}/{maximum_attempts} in {wait}s."
-                    )
-                    time.sleep(wait)
-                elif voice == PRIMARY_TTS_VOICE:
-                    tracker.update(
-                        18,
-                        "Switching Hindi voice",
-                        f"{voice} failed {maximum_attempts} times. "
-                        f"Trying {FALLBACK_TTS_VOICE}."
-                    )
-
-    raise RuntimeError(
-        "Hindi narration failed with both Kunal and Madhur. "
-        + " | ".join(voice_errors)
-    )
+    voice_file = WORK_DIR / 'narration_raw.mp3'
+    output = OUTPUT_DIR / 'narration.mp3'
+    asyncio.run(create_voice(text, voice_file, PRIMARY_TTS_VOICE))
+    run_command(['ffmpeg','-y','-i',str(voice_file),'-af','silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB','-ar','48000','-ac','2','-c:a','libmp3lame','-q:a','2',str(output)])
+    if not output.exists() or output.stat().st_size < 1000: raise RuntimeError('Andrew Hindi voice audio is empty after silence trimming.')
+    (OUTPUT_DIR / 'voice_used.txt').write_text(PRIMARY_TTS_VOICE + chr(10), encoding='utf-8')
+    print('VOICE_USED=' + PRIMARY_TTS_VOICE)
+    return output
 
 def make_srt(text, duration, filename):
     # Keep caption chunks aligned to sentence boundaries where possible.
