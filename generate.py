@@ -421,58 +421,44 @@ async def create_voice(text, filename, voice):
     await communicate.save(str(filename))
 
 
-def generate_voice(text):
-    voice_file = WORK_DIR / 'narration_raw.mp3'
-    output = OUTPUT_DIR / 'narration.mp3'
-    asyncio.run(create_voice(text, voice_file, PRIMARY_TTS_VOICE))
-    run_command(['ffmpeg','-y','-i',str(voice_file),'-af','silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB','-ar','48000','-ac','2','-c:a','libmp3lame','-q:a','2',str(output)])
-    if not output.exists() or output.stat().st_size < 1000: raise RuntimeError('Andrew Hindi voice audio is empty after silence trimming.')
+def generate_scene_audio(scenes):
+    audio_files = []
+    voice_dir = WORK_DIR / 'voice'
+    voice_dir.mkdir(exist_ok=True)
+    for index, scene in enumerate(scenes, 1):
+        raw = voice_dir / f'scene_{index:02d}_raw.mp3'
+        trimmed = voice_dir / f'scene_{index:02d}.mp3'
+        asyncio.run(create_voice(scene['tts_text'], raw, PRIMARY_TTS_VOICE))
+        run_command(['ffmpeg','-y','-i',str(raw),'-af','silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB','-ar','48000','-ac','2','-c:a','libmp3lame','-q:a','2',str(trimmed)])
+        if not trimmed.exists() or trimmed.stat().st_size < 500: raise RuntimeError(f'Scene {index} audio is empty after trimming.')
+        audio_files.append(trimmed)
+    concat = WORK_DIR / 'voice_concat.txt'
+    concat.write_text(''.join("file '" + str(p.resolve()) + "'\\n" for p in audio_files), encoding='utf-8')
+    voice = OUTPUT_DIR / 'narration.mp3'
+    run_command(['ffmpeg','-y','-f','concat','-safe','0','-i',str(concat),'-c:a','libmp3lame','-q:a','2',str(voice)])
     (OUTPUT_DIR / 'voice_used.txt').write_text(PRIMARY_TTS_VOICE + chr(10), encoding='utf-8')
     print('VOICE_USED=' + PRIMARY_TTS_VOICE)
-    return output
+    return voice, audio_files
 
-def make_srt(text, duration, filename):
-    # Keep caption chunks aligned to sentence boundaries where possible.
-    # Allocate display time in proportion to each chunk's word count instead
-    # of giving a short final chunk the same duration as a long one.
-    sentences = re.split(r"(?<=[.!?।])\s+", text.strip())
-    groups = []
-
-    for sentence in sentences:
-        remaining = sentence.split()
-        while remaining:
-            groups.append(remaining[:2])
-            remaining = remaining[2:]
-
-    if not groups:
-        raise RuntimeError("Narration has no words.")
-
-    total_words = sum(len(group) for group in groups)
-
+def make_scene_srt(scenes, audio_files, filename):
     def stamp(seconds):
-        milliseconds = int(seconds * 1000)
-        hours = milliseconds // 3600000
-        minutes = (milliseconds % 3600000) // 60000
-        seconds_part = (milliseconds % 60000) // 1000
-        millis = milliseconds % 1000
-        return (
-            f"{hours:02}:{minutes:02}:"
-            f"{seconds_part:02},{millis:03}"
-        )
-
+        ms = int(seconds * 1000)
+        return f'{ms//3600000:02}:{(ms//60000)%60:02}:{(ms//1000)%60:02},{ms%1000:03}'
     cursor = 0.0
-    with open(filename, "w", encoding="utf-8") as file:
-        for index, group in enumerate(groups):
-            start = cursor
-            if index == len(groups) - 1:
-                end = duration
-            else:
-                end = cursor + duration * len(group) / total_words
-            file.write(f"{index + 1}\\n")
-            file.write(f"{stamp(start)} --> {stamp(end)}\\n")
-            file.write(" ".join(group) + "\\n\\n")
-            cursor = end
-
+    cue = 1
+    with open(filename, 'w', encoding='utf-8') as file:
+        for scene, audio in zip(scenes, audio_files):
+            duration = get_duration(audio)
+            words = scene['caption_text'].split()
+            groups = [words[i:i+2] for i in range(0, len(words), 2)]
+            total = max(1, sum(len(group) for group in groups))
+            local = 0.0
+            for index, group in enumerate(groups):
+                end = duration if index == len(groups)-1 else local + duration*len(group)/total
+                file.write('{}\\n{} --> {}\\n{}\\n\\n'.format(cue, stamp(cursor+local), stamp(cursor+end), ' '.join(group)))
+                cue += 1
+                local = end
+            cursor += duration
 
 def create_clips(scenes, target_duration):
     clips = []
@@ -556,13 +542,13 @@ def join_clips(clips):
     return joined
 
 
-def assemble_final_video(joined, voice, narration):
+def assemble_final_video(joined, voice, scenes, audio_files):
     voice_duration = get_duration(voice)
     visual_duration = get_duration(joined)
     if visual_duration + 0.25 < voice_duration:
         raise RuntimeError(f'Visual footage ({visual_duration:.1f}s) is shorter than narration ({voice_duration:.1f}s).')
     subtitles = WORK_DIR / 'captions.srt'
-    make_srt(narration, voice_duration, subtitles)
+    make_scene_srt(scenes, audio_files, subtitles)
     subtitle_path = subtitles.resolve().as_posix().replace(':', '\\\\:')
     music = WORK_DIR / 'documentary_bed.wav'
     whoosh = WORK_DIR / 'transition_whoosh.wav'
@@ -651,7 +637,7 @@ def main():
             "Generating Hindi narration"
         )
 
-        voice = generate_voice(" ".join(scene.get("tts_text", "") for scene in story["scenes"]) or story["voiceover"])
+        voice, audio_files = generate_scene_audio(story["scenes"])
 
         tracker.start_stage(
             25,
@@ -682,11 +668,7 @@ def main():
             "Adding narration and subtitles"
         )
 
-        final_video = assemble_final_video(
-            joined,
-            voice,
-            " ".join(scene["caption_text"] for scene in story["scenes"])
-        )
+        final_video = assemble_final_video(joined, voice, story['scenes'], audio_files)
 
         tracker.start_stage(
             94,
