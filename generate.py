@@ -4,6 +4,7 @@ import re
 import json
 import time
 import asyncio
+import math
 import subprocess
 from pathlib import Path
 
@@ -415,66 +416,63 @@ def generate_voice(text):
     voice_file = WORK_DIR / "narration.mp3"
     voice_errors = []
 
-    # Try Kunal first. If Edge TTS fails or returns an empty file,
-    # retry Kunal once, then automatically switch to Madhur.
-    for voice in (PRIMARY_TTS_VOICE, FALLBACK_TTS_VOICE):
-        for attempt in range(1, 3):
+    # Kunal is preferred. Retry transient Edge TTS failures with longer
+    # backoff before switching to Madhur as a last-resort fallback.
+    for voice, maximum_attempts in (
+        (PRIMARY_TTS_VOICE, 4),
+        (FALLBACK_TTS_VOICE, 2)
+    ):
+        for attempt in range(1, maximum_attempts + 1):
             try:
                 if voice_file.exists():
                     voice_file.unlink()
 
                 print(
                     f"Generating Hindi narration with {voice} "
-                    f"(attempt {attempt}/2)"
+                    f"(attempt {attempt}/{maximum_attempts})"
                 )
 
-                asyncio.run(
-                    create_voice(text, voice_file, voice)
-                )
+                asyncio.run(create_voice(text, voice_file, voice))
 
                 if not voice_file.exists() or voice_file.stat().st_size < 1000:
-                    raise RuntimeError(
-                        f"{voice} returned no usable audio."
-                    )
+                    raise RuntimeError(f"{voice} returned no usable audio.")
 
+                selected_voice = OUTPUT_DIR / "voice_used.txt"
+                selected_voice.write_text(voice + "\\n", encoding="utf-8")
+                print(f"VOICE_USED={voice}")
                 print(f"Voice generation successful: {voice}")
                 return voice_file
 
             except Exception as exc:
-                error = f"{voice} attempt {attempt}: {type(exc).__name__}: {exc}"
+                error = (
+                    f"{voice} attempt {attempt}/{maximum_attempts}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
                 voice_errors.append(error)
                 print(f"⚠️ {error}")
                 tracker.retries += 1
 
-                if voice == PRIMARY_TTS_VOICE and attempt == 1:
+                if attempt < maximum_attempts:
+                    wait = min(8 * (2 ** (attempt - 1)), 30)
                     tracker.update(
                         18,
                         "Retrying Hindi narration",
-                        f"{voice} failed. Retrying once before fallback."
+                        f"{voice} failed ({type(exc).__name__}). "
+                        f"Retry {attempt + 1}/{maximum_attempts} in {wait}s."
                     )
-                    time.sleep(3)
-
-                elif voice == PRIMARY_TTS_VOICE and attempt == 2:
+                    time.sleep(wait)
+                elif voice == PRIMARY_TTS_VOICE:
                     tracker.update(
                         18,
                         "Switching Hindi voice",
-                        f"{voice} failed twice. Trying {FALLBACK_TTS_VOICE}."
+                        f"{voice} failed {maximum_attempts} times. "
+                        f"Trying {FALLBACK_TTS_VOICE}."
                     )
-                    time.sleep(2)
-
-                elif attempt == 1:
-                    tracker.update(
-                        18,
-                        "Retrying fallback Hindi voice",
-                        f"{voice} failed. Retrying once."
-                    )
-                    time.sleep(3)
 
     raise RuntimeError(
         "Hindi narration failed with both Kunal and Madhur. "
         + " | ".join(voice_errors)
     )
-
 
 def make_srt(text, duration, filename):
     words = text.split()
@@ -521,19 +519,30 @@ def make_srt(text, duration, filename):
             file.write(" ".join(group) + "\n\n")
 
 
-def create_clips(scenes):
+def create_clips(scenes, target_duration):
     clips = []
+    if not scenes:
+        raise RuntimeError("No scene prompts were supplied.")
+
+    # Generate enough unique footage to cover the narration. Never loop a
+    # short visual sequence to fill a much longer voiceover.
+    scene_duration = math.ceil(float(target_duration) / len(scenes))
+    if scene_duration > 14:
+        raise RuntimeError(
+            f"Narration needs {scene_duration}s per scene, above the 14s limit. "
+            "Generate more connected scenes or shorten the narration."
+        )
 
     for index, scene in enumerate(scenes, start=1):
 
         output = WORK_DIR / f"scene_{index}.mp4"
 
-        percent = 25 + index * 9
+        percent = 25 + int(index * 35 / len(scenes))
 
         tracker.start_stage(
             percent,
-            f"Generating scene {index}/4",
-            f"Completed scenes: {index - 1}/4"
+            f"Generating scene {index}/{len(scenes)}",
+            f"Completed scenes: {index - 1}/{len(scenes)}; target clip: {scene_duration}s"
         )
 
         def retry_callback(
@@ -555,7 +564,7 @@ def create_clips(scenes):
         generate_video(
             prompt=scene,
             output_path=output,
-            duration=5,
+            duration=scene_duration,
             on_retry=retry_callback
         )
 
@@ -570,9 +579,9 @@ def normalize_clips(clips):
     for index, clip in enumerate(clips, start=1):
 
         tracker.update(
-            65 + index * 3,
+            65 + int(index * 12 / len(clips)),
             "Normalizing clips",
-            f"Processing clip {index}/4"
+            f"Processing clip {index}/{len(clips)}"
         )
 
         output = WORK_DIR / f"normalized_{index}.mp4"
@@ -627,6 +636,12 @@ def join_clips(clips):
 def assemble_final_video(joined, voice, narration):
 
     voice_duration = get_duration(voice)
+    visual_duration = get_duration(joined)
+    if visual_duration + 0.25 < voice_duration:
+        raise RuntimeError(
+            f"Visual footage is too short ({visual_duration:.1f}s) for narration "
+            f"({voice_duration:.1f}s). Refusing to repeat scenes."
+        )
 
     subtitles = WORK_DIR / "captions.srt"
 
@@ -659,7 +674,6 @@ def assemble_final_video(joined, voice, narration):
 
     run_command([
         "ffmpeg", "-y",
-        "-stream_loop", "-1",
         "-i", str(joined.resolve()),
         "-i", str(voice.resolve()),
         "-vf", subtitle_filter,
@@ -772,8 +786,12 @@ def main():
             "Preparing four AI scenes"
         )
 
+        narration_duration = get_duration(voice)
+        print(f"Narration duration: {narration_duration:.2f}s")
+
         clips = create_clips(
-            story["scenes"]
+            story["scenes"],
+            narration_duration
         )
 
         tracker.start_stage(
