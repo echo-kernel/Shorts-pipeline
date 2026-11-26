@@ -655,7 +655,7 @@ def main():
 
         tracker.start_stage(
             25,
-            "Preparing four AI scenes"
+            "Preparing topic-adaptive scenes"
         )
 
         narration_duration = get_duration(voice)
