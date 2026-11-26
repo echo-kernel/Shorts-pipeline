@@ -70,7 +70,7 @@ jobs:
         if: inputs.source == 'artifact'
         uses: actions/download-artifact@v4
         with:
-          name: historical-short-mp4
+          name: previous-kaggle-video
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.VIDEO_GITHUB_TOKEN }}
           path: youtube-upload
@@ -125,6 +125,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           VIDEO_TITLE: ${{ inputs.title || github.event.head_commit.message }}
           PRIVACY_STATUS: ${{ inputs.privacy_status || 'public' }}
+          VIDEO_SOURCE: ${{ inputs.source || 'push' }}
         run: |
           python - <<'PY'
           import os
@@ -145,10 +146,16 @@ jobs:
           videos = [p for p in Path("youtube-upload").rglob("*.mp4") if p.is_file()]
           if not videos:
               raise SystemExit("No MP4 found. The artifact may have expired, or the Telegram file could not be downloaded.")
-          if os.getenv("GITHUB_EVENT_NAME") == "push":
+          source = os.getenv("VIDEO_SOURCE", "push")
+          if source == "push":
               video = Path("youtube-upload/video.mp4")
               if not video.exists():
                   raise SystemExit("The MP4 from the triggering commit was not prepared.")
+          elif source == "artifact":
+              candidates = [p for p in videos if p.name == "historical_short.mp4"]
+              if not candidates:
+                  raise SystemExit("The Kaggle artifact does not contain historical_short.mp4.")
+              video = min(candidates, key=lambda p: (len(p.parts), str(p)))
           else:
               video = max(videos, key=lambda p: p.stat().st_size)
           if video.stat().st_size < 10000:
@@ -324,7 +331,7 @@ jobs:
         if: inputs.source == 'artifact'
         uses: actions/download-artifact@v4
         with:
-          name: historical-short-mp4
+          name: previous-kaggle-video
           run-id: ${{ inputs.run_id }}
           github-token: ${{ secrets.VIDEO_GITHUB_TOKEN }}
           path: youtube-upload
@@ -379,6 +386,7 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
           VIDEO_TITLE: ${{ inputs.title || github.event.head_commit.message }}
           PRIVACY_STATUS: ${{ inputs.privacy_status || 'public' }}
+          VIDEO_SOURCE: ${{ inputs.source || 'push' }}
         run: |
           python - <<'PY'
           import os
