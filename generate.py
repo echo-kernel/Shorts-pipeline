@@ -438,7 +438,7 @@ def generate_voice(text):
                     raise RuntimeError(f"{voice} returned no usable audio.")
 
                 selected_voice = OUTPUT_DIR / "voice_used.txt"
-                selected_voice.write_text(voice + "\\n", encoding="utf-8")
+                selected_voice.write_text(voice + "\n", encoding="utf-8")
                 print(f"VOICE_USED={voice}")
                 print(f"Voice generation successful: {voice}")
                 return voice_file
@@ -475,48 +475,46 @@ def generate_voice(text):
     )
 
 def make_srt(text, duration, filename):
-    words = text.split()
+    # Keep caption chunks aligned to sentence boundaries where possible.
+    # Allocate display time in proportion to each chunk's word count instead
+    # of giving a short final chunk the same duration as a long one.
+    sentences = re.split(r"(?<=[.!?।])\\s+", text.strip())
+    groups = []
 
-    if not words:
+    for sentence in sentences:
+        remaining = sentence.split()
+        while remaining:
+            groups.append(remaining[:7])
+            remaining = remaining[7:]
+
+    if not groups:
         raise RuntimeError("Narration has no words.")
 
-    groups = [
-        words[i:i + 5]
-        for i in range(0, len(words), 5)
-    ]
-
-    segment_duration = duration / len(groups)
+    total_words = sum(len(group) for group in groups)
 
     def stamp(seconds):
         milliseconds = int(seconds * 1000)
-
         hours = milliseconds // 3600000
         minutes = (milliseconds % 3600000) // 60000
         seconds_part = (milliseconds % 60000) // 1000
         millis = milliseconds % 1000
-
         return (
             f"{hours:02}:{minutes:02}:"
             f"{seconds_part:02},{millis:03}"
         )
 
+    cursor = 0.0
     with open(filename, "w", encoding="utf-8") as file:
-
         for index, group in enumerate(groups):
-
-            start = index * segment_duration
-
-            end = min(
-                duration,
-                (index + 1) * segment_duration
-            )
-
-            file.write(f"{index + 1}\n")
-            file.write(
-                f"{stamp(start)} --> {stamp(end)}\n"
-            )
-
-            file.write(" ".join(group) + "\n\n")
+            start = cursor
+            if index == len(groups) - 1:
+                end = duration
+            else:
+                end = cursor + duration * len(group) / total_words
+            file.write(f"{index + 1}\\n")
+            file.write(f"{stamp(start)} --> {stamp(end)}\\n")
+            file.write(" ".join(group) + "\\n\\n")
+            cursor = end
 
 
 def create_clips(scenes, target_duration):
