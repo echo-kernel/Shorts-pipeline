@@ -4,6 +4,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import contextily as ctx
+import geopandas as gpd
 from shapely.geometry import LineString
 from pyproj import Transformer
 
@@ -50,6 +51,12 @@ def render_map_scene(scene, output, duration):
                 ctx.add_basemap(ax, source=ctx.providers.Esri.WorldImagery, crs='EPSG:3857', attribution=False, zoom=zoom)
             except Exception as fallback_exc:
                 print('Esri imagery fallback:', fallback_exc)
+        try:
+            borders = gpd.read_file("https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson").to_crs("EPSG:3857")
+            borders.boundary.plot(ax=ax, color="#00d9ff", linewidth=5, alpha=0.16, zorder=3)
+            borders.boundary.plot(ax=ax, color="#65eaff", linewidth=1.0, alpha=0.75, zorder=4)
+        except Exception as border_exc:
+            print("Country border overlay unavailable:", border_exc)
         if len(route_xy) >= 2:
             line = LineString(route_xy); xs, ys = line.xy
             count = max(2, int(len(xs) * eased))
