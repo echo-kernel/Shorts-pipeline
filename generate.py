@@ -567,7 +567,7 @@ def assemble_final_video(joined, voice, narration):
     music = WORK_DIR / 'documentary_bed.wav'
     whoosh = WORK_DIR / 'transition_whoosh.wav'
     cut = max(1.0, visual_duration / max(1, len(json.loads((OUTPUT_DIR / 'story.json').read_text(encoding='utf-8')).get('scenes', []))))
-    run_command(['ffmpeg','-y','-f','lavfi','-i',f'anoisesrc=color=pink:duration={voice_duration}:amplitude=0.018','-af',f'lowpass=f=180,afade=t=in:st=0:d=2,afade=t=out:st={max(0,voice_duration-3)}:d=3',str(music)])
+    run_command(['ffmpeg','-y','-f','lavfi','-i',f'aevalsrc=0.18*sin(2*PI*55*t)+0.12*sin(2*PI*82.41*t)+0.08*sin(2*PI*110*t):s=48000:d={voice_duration}','-af',f'lowpass=f=180,afade=t=in:st=0:d=2,afade=t=out:st={max(0,voice_duration-3)}:d=3',str(music)])
     run_command(['ffmpeg','-y','-f','lavfi','-i',f'anoisesrc=color=white:duration={voice_duration}:amplitude=0.05','-af',f'highpass=f=700,lowpass=f=4500,volume=\'if(lt(mod(t,{cut}),0.24),0.14,0)\'',str(whoosh)])
     final_video = OUTPUT_DIR / 'historical_short.mp4'
     filters = '[2:a]volume=0.10[bed];[3:a]volume=0.6[fx];[1:a][bed][fx]amix=inputs=3:duration=first:dropout_transition=1[aout]'
