@@ -61,7 +61,13 @@ subprocess.run([
     "diffusers==0.43.0",
     "accelerate",
     "edge-tts",
-    "requests"
+    "requests",
+    "geopandas",
+    "contextily",
+    "matplotlib",
+    "shapely",
+    "pyproj",
+    "numpy"
 ], check=True)
 
 # 4. Check GPU
