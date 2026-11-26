@@ -433,7 +433,7 @@ def generate_scene_audio(scenes):
         if not trimmed.exists() or trimmed.stat().st_size < 500: raise RuntimeError(f'Scene {index} audio is empty after trimming.')
         audio_files.append(trimmed)
     concat = WORK_DIR / 'voice_concat.txt'
-    concat.write_text(''.join("file '" + str(p.resolve()) + "'\\n" for p in audio_files), encoding='utf-8')
+    concat.write_text(''.join("file '" + str(p.resolve()) + "'\n" for p in audio_files), encoding='utf-8')
     voice = OUTPUT_DIR / 'narration.mp3'
     run_command(['ffmpeg','-y','-f','concat','-safe','0','-i',str(concat),'-c:a','libmp3lame','-q:a','2',str(voice)])
     (OUTPUT_DIR / 'voice_used.txt').write_text(PRIMARY_TTS_VOICE + chr(10), encoding='utf-8')
@@ -455,7 +455,7 @@ def make_scene_srt(scenes, audio_files, filename):
             local = 0.0
             for index, group in enumerate(groups):
                 end = duration if index == len(groups)-1 else local + duration*len(group)/total
-                file.write('{}\\n{} --> {}\\n{}\\n\\n'.format(cue, stamp(cursor+local), stamp(cursor+end), ' '.join(group)))
+                file.write('{}\n{} --> {}\n{}\n\n'.format(cue, stamp(cursor+local), stamp(cursor+end), ' '.join(group)))
                 cue += 1
                 local = end
             cursor += duration
