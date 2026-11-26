@@ -3,3 +3,9 @@ google-genai
 gradio_client>=2.7.2,<2.8
 edge-tts
 requests
+
+geopandas
+contextily
+matplotlib
+shapely
+pyproj
