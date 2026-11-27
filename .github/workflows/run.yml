@@ -124,7 +124,7 @@ jobs:
           import json, os, urllib.request
           token, chat = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID']
           number = os.environ['VIDEO_NUMBER']
-          text = '🎬 VIDEO #' + number + '\\nSection: Classifying topic…\\n\\n🟡 Request accepted\\n⚪ Writing and checking story\\n⚪ Preparing Kaggle GPU job\\n⚪ Rendering scenes and Hindi narration\\n⚪ Editing final video\\n\\nRequested topic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:300]
+          text = '🎬 VIDEO #' + number + '\nSection: Classifying topic…\n\n🟡 Request accepted\n⚪ Writing and checking story\n⚪ Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Editing final video\n\nRequested topic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:300]
           markup = {'inline_keyboard': [[{'text': '📊 Track Video Progress', 'url': os.environ['TRACK_URL']}]]}
           payload = {'chat_id': chat, 'text': text, 'reply_markup': markup}
           req = urllib.request.Request(f'https://api.telegram.org/bot{token}/sendMessage', data=json.dumps(payload).encode(), headers={'Content-Type':'application/json'}, method='POST')
