@@ -310,6 +310,22 @@ jobs:
           raise SystemExit("All configured Gemini models failed initial story validation:\n" + "\n".join(failures[-6:]))
           PY
 
+      - name: Show assigned section and video number in Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          from pathlib import Path
+          story = json.loads(Path('kaggle/story.json').read_text(encoding='utf-8'))
+          text = '🎬 VIDEO #' + os.environ['VIDEO_NUMBER'] + ' — ' + story.get('title','AI Short') + '\nSection: ' + story.get('section','General') + '\nTopic: ' + story.get('topic','') + '\n\n✅ Request accepted\n✅ Story generated and checked\n🟡 Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Final editing'
+          req = urllib.request.Request('https://api.telegram.org/bot' + os.environ['TELEGRAM_BOT_TOKEN'] + '/editMessageText', data=json.dumps({'chat_id':os.environ['TELEGRAM_CHAT_ID'],'message_id':int(os.environ['PROGRESS_MESSAGE_ID']),'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          urllib.request.urlopen(req, timeout=20).read()
+          PY
+
       - name: Inject story and Kokoro voice into the private Kaggle kernel source
         env:
           KOKORO_VOICE_ID: ${{ inputs.voice_id || 'hm_omega' }}
