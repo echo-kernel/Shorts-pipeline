@@ -73,13 +73,17 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
 
     raw_files = []
 
-    variations = [
-        "wide cinematic establishing shot",
-        "medium camera shot with natural character movement",
-        "low-angle cinematic camera composition",
-        "side tracking camera perspective",
-        "dramatic close cinematic composition"
-    ]
+    # Keep the same framing and design across all generated segments of one scene.
+    # Random angle changes caused visual discontinuity in earlier videos.
+    segment_guidance = (
+        "Premium polished 3D cartoon educational animation, not photorealistic CGI, "
+        "not live action, not anime. Preserve the exact same subject design, proportions, "
+        "colors, component layout, environment and camera framing. One clear continuous "
+        "mechanical action that directly demonstrates the educational prompt. "
+        "Smooth visible motion, clean silhouettes, appealing controlled colors, "
+        "soft studio lighting, physically correct movement. No random objects, "
+        "unrelated machinery, text, labels, logos or watermarks."
+    )
 
     print("Generating", clip_count, "unique AI clips...")
     print("Target duration:", duration, "seconds")
@@ -89,9 +93,9 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
 
         scene_prompt = (
             prompt.strip()
-            + ". " + variations[i % len(variations)]
-            + ". Cinematic realistic motion, natural movement, "
-              "consistent historical setting, detailed environment."
+            + ". " + segment_guidance
+            + f" This is animated segment {i + 1} of {clip_count} from the SAME scene; "
+              "continue the same action and do not introduce a new subject or location."
         )
 
         print(f"Generating clip {i + 1}/{clip_count}...")
