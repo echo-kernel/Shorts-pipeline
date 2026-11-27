@@ -699,15 +699,33 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
+          TRACK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
+          from pathlib import Path
           token, chat, mid = os.getenv('TELEGRAM_BOT_TOKEN'), os.getenv('TELEGRAM_CHAT_ID'), os.getenv('PROGRESS_MESSAGE_ID')
           if token and chat and mid:
-              text = '❌ AI VIDEO PROCESS FAILED\n\nA pipeline step failed. Open GitHub Actions for the exact error. Kaggle logs are checked by the workflow when available.'
-              req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':int(mid),'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              number = os.getenv('VIDEO_NUMBER', '----')
+              story_path = Path('kaggle/story.json')
+              try:
+                  story = json.loads(story_path.read_text(encoding='utf-8')) if story_path.exists() else {}
+              except Exception:
+                  story = {}
+              section = story.get('section', 'Not assigned yet')
+              topic = story.get('topic', '')
+              title = story.get('title', '')
+              text = ('❌ VIDEO #' + number + ' — PROCESS FAILED\\n'
+                      + 'Section: ' + section + '\\n'
+                      + ('Title: ' + title + '\\n' if title else '')
+                      + ('Topic: ' + topic + '\\n' if topic else '')
+                      + '\\nA workflow step failed. Tap Track Video Progress to open the failed step and logs.')
+              markup = {'inline_keyboard': [[{'text': '📊 Track Video Progress', 'url': os.environ['TRACK_URL']}]]}
+              payload = {'chat_id': chat, 'message_id': int(mid), 'text': text, 'reply_markup': markup}
+              req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps(payload).encode(), headers={'Content-Type':'application/json'}, method='POST')
               try: urllib.request.urlopen(req, timeout=20).read()
-              except Exception as exc: print('Telegram failure update warning:', type(exc).__name__, str(exc)[:160])
+              except Exception as exc: print('Telegram update warning:', type(exc).__name__, str(exc)[:160])
           PY
 
       - name: Notify Telegram if submission workflow fails
