@@ -814,6 +814,12 @@ async function handleMessage(env, message) {
   const fixMatch = raw.match(/^\/fix\s+#?(\d{1,4})$/i);
   if (fixMatch) {
     const number = String(Number(fixMatch[1])).padStart(4, "0");
+    // A stale remake prompt from the old /fix implementation can remain in KV.
+    // Clear it before dispatching workflow repair so the user's next message
+    // cannot accidentally be consumed as a video-remake topic.
+    await env.QUIZ_STATE.delete("video-fix-pending:" + chatId);
+    await env.QUIZ_STATE.delete("video-pending:" + chatId);
+    await env.QUIZ_STATE.delete("video-topic:" + chatId);
     return dispatchWorkflowRepair(env, chatId, number);
   }
   const remakeMatch = raw.match(/^\/remake\s+#?(\d{1,4})$/i);
