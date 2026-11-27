@@ -6,6 +6,7 @@ const MAIN_MENU = {
   keyboard: [
     [{ text: "🎥 Request New Video" }],
     [{ text: "📤 YouTube Uploads" }, { text: "📊 Video Feedback" }],
+    [{ text: "🎙 Voice Settings" }],
     [{ text: "🆘 Help" }]
   ],
   resize_keyboard: true,
@@ -78,6 +79,7 @@ async function configureTelegramMenu(env, chatId) {
   await telegram(env, "setMyCommands", { commands: [
     { command: "start", description: "Open the AI Shorts bot" },
     { command: "video", description: "Request an educational AI video" },
+    { command: "voice", description: "Choose the Hindi narrator voice" },
     { command: "feedback", description: "View saved video feedback" },
     { command: "youtube", description: "Manage YouTube uploads" }
   ]});
@@ -694,6 +696,27 @@ async function understandNaturalRequest(env, raw) {
   };
 }
 
+
+const KOKORO_VOICE_OPTIONS = [
+  { id: "hm_omega", label: "♂️ Omega — Male (default)" },
+  { id: "hm_psi", label: "♂️ Psi — Male" },
+  { id: "hf_alpha", label: "♀️ Alpha — Female" },
+  { id: "hf_beta", label: "♀️ Beta — Female" }
+];
+
+async function showVoiceSettings(env, chatId) {
+  const current = await env.QUIZ_STATE.get("kokoro-voice:" + chatId) || "hm_omega";
+  const rows = KOKORO_VOICE_OPTIONS.map(voice => [{
+    text: (voice.id === current ? "✅ " : "") + voice.label,
+    callback_data: "voice:" + voice.id
+  }]);
+  await telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "🎙 KOKORO HINDI NARRATOR\\n\\nChoose the voice for your next video. Current voice: " + current + "\\n\\nDefault: hm_omega. Your choice is saved for future video requests.",
+    reply_markup: { inline_keyboard: rows }
+  });
+}
+
 async function askVideoTopic(env, chatId) {
   await env.QUIZ_STATE.put("video-pending:" + chatId, "topic", { expirationTtl: 900 });
   await telegram(env, "sendMessage", {
@@ -711,6 +734,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     });
     return;
   }
+  const voiceId = await env.QUIZ_STATE.get("kokoro-voice:" + chatId) || "hm_omega";
   const feedbackItems = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
   const feedbackSummary = feedbackItems.slice(-12).map(item =>
     "- " + item.rating.toUpperCase() + (item.topic ? " | video: " + item.topic : "") +
@@ -727,7 +751,7 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
     },
     body: JSON.stringify({
       ref: "jee-telegram-quiz",
-      inputs: { topic: topic.slice(0, 500), chat_id: String(chatId), feedback: feedbackSummary }
+      inputs: { topic: topic.slice(0, 500), chat_id: String(chatId), feedback: feedbackSummary, voice_id: voiceId }
     })
   });
   if (response.status !== 204) {
@@ -783,6 +807,7 @@ async function handleMessage(env, message) {
   }
   if (text === "/sections") return showSections(env, chatId);
   if (text === "/video" || text === "🎬 generate ai video" || text === "🎥 request new video") return askVideoTopic(env, chatId);
+  if (text === "/voice" || text === "🎙 voice settings") return showVoiceSettings(env, chatId);
   if (text === "📊 video feedback") return handleMessage(env, { ...message, text: "/feedback" });
   if (text === "/help" || text === "🆘 help") {
     return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
@@ -923,6 +948,16 @@ async function handleCallback(env, callback) {
       });
     }
     return;
+  }
+  if (parts[0] === "voice") {
+    const voiceId = parts[1];
+    if (!["hm_omega", "hm_psi", "hf_alpha", "hf_beta"].includes(voiceId)) return;
+    await env.QUIZ_STATE.put("kokoro-voice:" + chatId, voiceId);
+    const voice = KOKORO_VOICE_OPTIONS.find(item => item.id === voiceId);
+    return telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "✅ Narrator saved: " + voice.label + " (" + voiceId + ").\\nThis voice will be used for your next video."
+    });
   }
   if (parts[0] !== "video") return;
   if (parts[0] === "section") {
