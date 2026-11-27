@@ -550,6 +550,8 @@ jobs:
           find kaggle-download -type f -printf '%p (%s bytes)\n'
 
       - name: Validate and add video to repository
+        env:
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -573,7 +575,8 @@ jobs:
           topic = str(story.get("topic") or "educational-short")
           safe_topic = re.sub(r"[^A-Za-z0-9_-]+", "-", topic).strip("-")[:55] or "educational-short"
           stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-          destination = Path("videos") / f"{stamp}-{safe_topic}.mp4"
+          video_number = os.environ.get("VIDEO_NUMBER", "0000")
+          destination = Path("videos") / f"video-{video_number}-{stamp}-{safe_topic}.mp4"
           destination.parent.mkdir(parents=True, exist_ok=True)
           shutil.copy2(source, destination)
           print(f"Repository video ready: {destination} ({size} bytes)")
