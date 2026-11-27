@@ -41,7 +41,7 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-PRIMARY_TTS_VOICE = "hi-IN-MadhurNeural"
+PRIMARY_TTS_VOICE = "en-US-AndrewMultilingualNeural"
 TTS_RATE = "+10%"
 TTS_PITCH = "-2Hz"
 
