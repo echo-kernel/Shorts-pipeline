@@ -784,23 +784,24 @@ async function handleMessage(env, message) {
     await env.QUIZ_STATE.put("video-fix-pending:" + chatId, JSON.stringify({ number }), { expirationTtl: 900 });
     return telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "🛠️ Repair request for VIDEO #" + number + "\n\nSend the original topic and describe exactly what is wrong (for example: repeated shots, disconnected scenes, incorrect physics, bad faces, narration/audio or subtitles).\n\nI'll use your report to generate a corrected remake. The new version will receive a new video number; the original will not be overwritten."
+      text: "🛠️ Repair request for VIDEO #" + number + "\n\nSend the details in this format:\nTopic: How an airplane engine works\nProblems: scenes repeat, shots are disconnected, narration is unclear.\n\nI'll create a corrected remake. It will receive a new video number; the original will not be overwritten."
     });
   }
   const pendingVideoFix = await env.QUIZ_STATE.get("video-fix-pending:" + chatId, "json");
   if (pendingVideoFix && raw && !raw.startsWith("/")) {
     await env.QUIZ_STATE.delete("video-fix-pending:" + chatId);
     const instruction = raw.slice(0, 1200);
+    const topicLine = instruction.match(/(?:^|\\n)topic\\s*:\\s*([^\\n]+)/i);
+    const problemsMatch = instruction.match(/(?:^|\\n)(?:problems?|issues?)\\s*:\\s*([\\s\\S]*)/i);
+    const lines = instruction.split(/\\r?\\n/).map(line => line.trim()).filter(Boolean);
+    const originalTopic = (topicLine ? topicLine[1] : (lines[0] || instruction)).slice(0, 400);
+    const problems = (problemsMatch ? problemsMatch[1] : lines.slice(1).join(" ") ||
+      "Improve scene continuity, visual consistency, narration clarity and scientific accuracy.").slice(0, 700);
     const repairFeedback = "This is a repair/remake request for existing VIDEO #" + pendingVideoFix.number +
-      ". Preserve the same subject and factual intent. Fix the specific problems described by the user. " +
-      "Do not reuse defective scene ideas, repeated shots, disconnected sequences, inaccurate physics, poor character consistency, narration or audio. " +
-      "User's original topic and repair instructions: " + instruction;
-    return dispatchVideoWorkflow(
-      env,
-      chatId,
-      "Corrected remake of VIDEO #" + pendingVideoFix.number + ": " + instruction,
-      { repairFeedback }
-    );
+      ". Preserve the original subject and factual intent. Original topic: " + originalTopic +
+      ". Problems to fix: " + problems +
+      ". Do not reuse defective scene ideas, repeated shots, disconnected sequences, inaccurate physics, poor character consistency, narration or audio.";
+    return dispatchVideoWorkflow(env, chatId, originalTopic, { repairFeedback });
   }
   const pendingVideoReport = await env.QUIZ_STATE.get("video-feedback-report:" + chatId, "json");
   if (pendingVideoReport && raw && !raw.startsWith("/")) {
