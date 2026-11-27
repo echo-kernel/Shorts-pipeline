@@ -93,7 +93,7 @@ jobs:
           last_number = int(data.get('last_number', 0))
           requested = os.environ.get('REQUESTED_VIDEO_NUMBER', '').strip()
           if requested:
-              if not re.fullmatch(r'\\d{4}', requested):
+              if not re.fullmatch(r'\d{4}', requested):
                   raise SystemExit('Requested video_number must be exactly four digits.')
               number = int(requested)
               next_last_number = max(last_number, number)
