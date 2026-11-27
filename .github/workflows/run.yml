@@ -74,6 +74,23 @@ jobs:
             echo "$name is configured."
           done
 
+      - name: Start Telegram progress message
+        id: progress_start
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token, chat = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID']
+          text = '🎬 AI VIDEO PROCESS\n\n🟡 Request accepted\n⚪ Writing and checking story\n⚪ Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Editing final video\n\nTopic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:350]
+          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/sendMessage', data=json.dumps({'chat_id':chat,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          with urllib.request.urlopen(req, timeout=20) as r: data = json.loads(r.read().decode())
+          if not data.get('ok'): raise SystemExit('Could not create Telegram progress message')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as out: out.write('message_id=' + str(data['result']['message_id']) + '\n')
+          PY
+
       - name: Generate educational explainer with Gemini
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -358,14 +375,34 @@ jobs:
               print(f"Recorded submitted Kaggle job for: {topic}")
           PY
 
+      - name: Update Telegram before Kaggle monitoring
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
+          text = '🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle GPU job submitted\n🟡 Waiting for Kaggle GPU / rendering\n⚪ Creating scenes and Hindi narration\n⚪ Assembling subtitles and final MP4'
+          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          urllib.request.urlopen(req, timeout=20).read()
+          PY
+
       - name: Wait for Kaggle generation to finish
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
         run: |
           python - <<'PY'
+          import json
+          import os
           import re
           import subprocess
           import time
+          import urllib.request
 
           kernel = "apuravjadhav/shorts-pipeline-wan"
           max_wait_seconds = 350 * 60
@@ -374,6 +411,17 @@ jobs:
           transient_failures = 0
 
           print(f"Monitoring Kaggle kernel: {kernel}")
+          token = os.environ['TELEGRAM_BOT_TOKEN']
+          chat = os.environ['TELEGRAM_CHAT_ID']
+          message_id = int(os.environ['PROGRESS_MESSAGE_ID'])
+          def update_telegram(status, elapsed):
+              if 'QUEUED' in status: label = 'Kaggle has queued the GPU job'
+              elif 'RUNNING' in status: label = 'Kaggle GPU notebook is running; scenes and narration are processing'
+              else: label = 'Kaggle status: ' + status
+              message = ('🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle job submitted\n🟡 ' + label + '\n⚪ Final editing and MP4 recovery\n\nKaggle status: ' + status + '\nTime on Kaggle: ' + str(elapsed // 60) + ' min ' + str(elapsed % 60) + ' sec\n\nThis message refreshes automatically.')
+              req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':message_id,'text':message}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              try: urllib.request.urlopen(req, timeout=20).read()
+              except Exception as exc: print('Telegram update warning:', type(exc).__name__, str(exc)[:150])
           while time.monotonic() - started < max_wait_seconds:
               result = subprocess.run(
                   ["kaggle", "kernels", "status", kernel],
@@ -382,6 +430,7 @@ jobs:
               )
               output = (result.stdout + "\n" + result.stderr).strip()
               print(output or f"Kaggle status command exited with code {result.returncode}")
+              if result.returncode == 0: update_telegram(output, int(time.monotonic() - started))
 
               if result.returncode != 0:
                   transient_failures += 1
