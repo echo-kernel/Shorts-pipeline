@@ -79,6 +79,7 @@ async function configureTelegramMenu(env, chatId) {
   await telegram(env, "setMyCommands", { commands: [
     { command: "start", description: "Open the AI Shorts bot" },
     { command: "video", description: "Request an educational AI video" },
+    { command: "fix", description: "Request a remake of a numbered video" },
     { command: "voice", description: "Choose the Hindi narrator voice" },
     { command: "feedback", description: "View saved video feedback" },
     { command: "youtube", description: "Manage YouTube uploads" }
@@ -849,7 +850,7 @@ async function handleMessage(env, message) {
   if (text === "/voice" || text === "🎙 voice settings") return showVoiceSettings(env, chatId);
   if (text === "📊 video feedback") return handleMessage(env, { ...message, text: "/feedback" });
   if (text === "/help" || text === "🆘 help") {
-    return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
+    return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/fix 0003 — request a corrected remake of video #0003\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
   }
   if (!raw.startsWith("/")) {
     return telegram(env, "sendMessage", { chat_id: chatId, text: "This bot now handles AI Shorts only. Tap 🎥 Request New Video or send /video. Use /youtube for uploads and /feedback for video feedback." });
