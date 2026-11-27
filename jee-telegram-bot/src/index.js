@@ -726,7 +726,7 @@ async function askVideoTopic(env, chatId) {
   });
 }
 
-async function dispatchVideoWorkflow(env, chatId, topic) {
+async function dispatchVideoWorkflow(env, chatId, topic, options = {}) {
   if (!env.GITHUB_TOKEN) {
     await telegram(env, "sendMessage", {
       chat_id: chatId,
@@ -736,10 +736,13 @@ async function dispatchVideoWorkflow(env, chatId, topic) {
   }
   const voiceId = await env.QUIZ_STATE.get("kokoro-voice:" + chatId) || "hm_omega";
   const feedbackItems = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
-  const feedbackSummary = feedbackItems.slice(-12).map(item =>
-    "- " + item.rating.toUpperCase() + (item.topic ? " | video: " + item.topic : "") +
-    (item.comment ? " | note: " + item.comment : "")
-  ).join("\n").slice(0, 3000);
+  const feedbackSummary = [
+    ...feedbackItems.slice(-12).map(item =>
+      "- " + item.rating.toUpperCase() + (item.topic ? " | video: " + item.topic : "") +
+      (item.comment ? " | note: " + item.comment : "")
+    ),
+    options.repairFeedback ? "REPAIR REQUEST: " + options.repairFeedback : ""
+  ].filter(Boolean).join("\n").slice(0, 4000);
   const response = await fetch("https://api.github.com/repos/echo-kernel/Shorts-pipeline/actions/workflows/run.yml/dispatches", {
     method: "POST",
     headers: {
@@ -771,8 +774,32 @@ async function handleMessage(env, message) {
   const text = raw.toLowerCase().replace(/\s+/g, " ");
   if (text === "/start") {
     await configureTelegramMenu(env, chatId);
-    await showMainMenu(env, chatId, "Welcome to the AI Shorts bot! Request a new educational video, review video feedback, or manage YouTube uploads.");
+    await showMainMenu(env, chatId, "Welcome to the AI Shorts bot! Request a new educational video, repair an earlier Short, review feedback, or manage YouTube uploads.");
     return;
+  }
+  const fixMatch = raw.match(/^\/fix\s+#?(\d{1,4})$/i);
+  if (fixMatch) {
+    const number = String(Number(fixMatch[1])).padStart(4, "0");
+    await env.QUIZ_STATE.put("video-fix-pending:" + chatId, JSON.stringify({ number }), { expirationTtl: 900 });
+    return telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "🛠️ Repair request for VIDEO #" + number + "\n\nSend the original topic and describe exactly what is wrong (for example: repeated shots, disconnected scenes, incorrect physics, bad faces, narration/audio or subtitles).\n\nI'll use your report to generate a corrected remake. The new version will receive a new video number; the original will not be overwritten."
+    });
+  }
+  const pendingVideoFix = await env.QUIZ_STATE.get("video-fix-pending:" + chatId, "json");
+  if (pendingVideoFix && raw && !raw.startsWith("/")) {
+    await env.QUIZ_STATE.delete("video-fix-pending:" + chatId);
+    const instruction = raw.slice(0, 1200);
+    const repairFeedback = "This is a repair/remake request for existing VIDEO #" + pendingVideoFix.number +
+      ". Preserve the same subject and factual intent. Fix the specific problems described by the user. " +
+      "Do not reuse defective scene ideas, repeated shots, disconnected sequences, inaccurate physics, poor character consistency, narration or audio. " +
+      "User's original topic and repair instructions: " + instruction;
+    return dispatchVideoWorkflow(
+      env,
+      chatId,
+      "Corrected remake of VIDEO #" + pendingVideoFix.number + ": " + instruction,
+      { repairFeedback }
+    );
   }
   const pendingVideoReport = await env.QUIZ_STATE.get("video-feedback-report:" + chatId, "json");
   if (pendingVideoReport && raw && !raw.startsWith("/")) {
