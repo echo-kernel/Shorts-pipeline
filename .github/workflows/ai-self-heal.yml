@@ -91,7 +91,7 @@ jobs:
               # GitHub's workflow-runs API accepts status=completed, not status=failure.
               # Find the exact run by its unique video allocation log marker; never fall
               # back to "the latest failed run", which could belong to another video.
-              if not re.fullmatch(r"\\d{4}", manual_video):
+              if not re.fullmatch(r"\d{4}", manual_video):
                   print("Invalid video number; expected four digits. No run was selected.")
                   sys.exit(0)
               candidates = requests.get(
@@ -254,7 +254,7 @@ jobs:
           if manual_video and concat_list_bug:
               # The known audio-manifest bug is fixed on the branch. Rebuild the same
               # numbered video using its original requested topic; never rerun the old SHA.
-              topic_match = re.search(r"VIDEO_TOPIC:\\s*([^\\r\\n]+)", logs)
+              topic_match = re.search(r"VIDEO_TOPIC:\s*([^\r\n]+)", logs)
               if not topic_match:
                   retry_message = "The audio-manifest bug is fixed, but the original topic could not be recovered safely. No rebuild was dispatched."
               else:
