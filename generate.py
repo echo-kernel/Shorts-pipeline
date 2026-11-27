@@ -42,7 +42,6 @@ TOPIC = os.getenv(
 )
 
 PRIMARY_TTS_VOICE = "en-US-AndrewMultilingualNeural"
-FALLBACK_TTS_VOICE = "hi-IN-MadhurNeural"
 TTS_RATE = "+10%"
 TTS_PITCH = "-2Hz"
 
@@ -410,91 +409,62 @@ Requirements:
     )
 
 
-async def create_voice(text, filename, primary_voice, fallback_voice, scene_number):
-    # Andrew remains the preferred voice. Only switch to the backup after
-    # all three Andrew attempts fail for this scene.
-    voice_plan = (
-        (primary_voice, "primary"),
-        (fallback_voice, "backup"),
-    )
+async def create_voice(text, filename, scene_number):
+    voice = PRIMARY_TTS_VOICE
     delays = (3, 8)
     failures = []
 
-    for voice, role in voice_plan:
-        for attempt in range(1, 4):
-            try:
-                if filename.exists():
-                    filename.unlink()
+    for attempt in range(1, 4):
+        try:
+            if filename.exists():
+                filename.unlink()
 
-                communicate = edge_tts.Communicate(
-                    text=text,
-                    voice=voice,
-                    rate=TTS_RATE,
-                    pitch=TTS_PITCH,
-                    volume="+0%"
-                )
-
-                await asyncio.wait_for(
-                    communicate.save(str(filename)),
-                    timeout=90
-                )
-
-                if not filename.exists() or filename.stat().st_size < 500:
-                    raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
-
-                subprocess.run(
-                    [
-                        "ffprobe", "-v", "error",
-                        "-show_entries", "format=duration",
-                        "-of", "default=noprint_wrappers=1:nokey=1",
-                        str(filename)
-                    ],
-                    check=True,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    timeout=20
-                )
-
-                print(
-                    f"TTS succeeded for scene {scene_number} using {voice} "
-                    f"({role}, attempt {attempt}/3)."
-                )
-                return voice
-
-            except Exception as exc:
-                if filename.exists():
-                    filename.unlink()
-
-                error = f"{voice} attempt {attempt}/3: {type(exc).__name__}: {exc}"
-                failures.append(error)
-                print(f"Edge TTS scene {scene_number} failed: {error}")
-
-                if attempt < 3:
-                    wait = delays[attempt - 1]
-                    tracker.retries += 1
-                    tracker.update(
-                        18,
-                        "Retrying Hindi narration",
-                        f"Scene {scene_number}: {role} voice attempt {attempt}/3 failed. "
-                        f"Retrying in {wait}s."
-                    )
-                    await asyncio.sleep(wait)
-
-        if role == "primary":
-            tracker.retries += 1
-            tracker.update(
-                18,
-                "Switching narration backup voice",
-                f"Andrew failed 3 times for scene {scene_number}; trying Hindi backup voice."
+            communicate = edge_tts.Communicate(
+                text=text,
+                voice=voice,
+                rate=TTS_RATE,
+                pitch=TTS_PITCH,
+                volume="+0%"
             )
-            print(
-                f"Andrew failed all 3 attempts for scene {scene_number}. "
-                f"Switching to backup voice {fallback_voice}."
+            await asyncio.wait_for(communicate.save(str(filename)), timeout=90)
+
+            if not filename.exists() or filename.stat().st_size < 500:
+                raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
+
+            subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    str(filename)
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20
             )
+            print(f"TTS succeeded for scene {scene_number} using {voice} (attempt {attempt}/3).")
+            return voice
+
+        except Exception as exc:
+            if filename.exists():
+                filename.unlink()
+            error = f"{voice} attempt {attempt}/3: {type(exc).__name__}: {exc}"
+            failures.append(error)
+            print(f"Edge TTS scene {scene_number} failed: {error}")
+            if attempt < 3:
+                wait = delays[attempt - 1]
+                tracker.retries += 1
+                tracker.update(
+                    18,
+                    "Retrying Andrew Hindi narration",
+                    f"Scene {scene_number}: Andrew attempt {attempt}/3 failed. Retrying in {wait}s."
+                )
+                await asyncio.sleep(wait)
 
     raise RuntimeError(
-        f"Both primary and backup Edge TTS voices failed for scene {scene_number}. "
-        + " | ".join(failures[-6:])
+        f"Andrew multilingual Edge TTS failed for scene {scene_number} after 3 attempts. "
+        "No alternate voice was used. " + " | ".join(failures)
     )
 
 
@@ -512,8 +482,6 @@ def generate_scene_audio(scenes):
             create_voice(
                 scene["tts_text"],
                 raw,
-                PRIMARY_TTS_VOICE,
-                FALLBACK_TTS_VOICE,
                 index
             )
         )
@@ -521,7 +489,7 @@ def generate_scene_audio(scenes):
         run_command([
             "ffmpeg", "-y", "-i", str(raw),
             "-af",
-            "silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB",
+            "silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=1:stop_duration=0.08:stop_threshold=-45dB",
             "-ar", "48000", "-ac", "2",
             "-c:a", "libmp3lame", "-q:a", "2", str(trimmed)
         ])
