@@ -79,7 +79,8 @@ async function configureTelegramMenu(env, chatId) {
   await telegram(env, "setMyCommands", { commands: [
     { command: "start", description: "Open the AI Shorts bot" },
     { command: "video", description: "Request an educational AI video" },
-    { command: "fix", description: "Request a remake of a numbered video" },
+    { command: "fix", description: "Diagnose and repair the failed video workflow" },
+    { command: "remake", description: "Request a quality remake of a numbered video" },
     { command: "voice", description: "Choose the Hindi narrator voice" },
     { command: "feedback", description: "View saved video feedback" },
     { command: "youtube", description: "Manage YouTube uploads" }
@@ -727,6 +728,38 @@ async function askVideoTopic(env, chatId) {
   });
 }
 
+async function dispatchWorkflowRepair(env, chatId, videoNumber) {
+  if (!env.GITHUB_TOKEN) {
+    return telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "⚠️ Workflow repair is not connected. Add GITHUB_TOKEN to the Cloudflare Worker with GitHub Actions: write permission."
+    });
+  }
+  const response = await fetch("https://api.github.com/repos/echo-kernel/Shorts-pipeline/actions/workflows/ai-self-heal.yml/dispatches", {
+    method: "POST",
+    headers: {
+      "Accept": "application/vnd.github+json",
+      "User-Agent": "JEE-Telegram-Quiz-Bot/1.0",
+      "Authorization": "Bearer " + env.GITHUB_TOKEN,
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      ref: "main",
+      inputs: { video_number: videoNumber, branch: "jee-telegram-quiz" }
+    })
+  });
+  if (response.status !== 204) {
+    const detail = (await response.text()).slice(0, 500);
+    throw new Error("GitHub rejected workflow repair dispatch (HTTP " + response.status + "): " + detail);
+  }
+  return telegram(env, "sendMessage", {
+    chat_id: chatId,
+    text: "🛠 WORKFLOW REPAIR STARTED — VIDEO #" + videoNumber +
+      "\n\nI will inspect the latest failed AI video-generation workflow on branch jee-telegram-quiz, diagnose the failed step, and either retry a clearly temporary failure or prepare a validated code-repair Pull Request.\n\nThis does NOT generate another video. I will send the diagnosis and repair result here."
+  });
+}
+
 async function dispatchVideoWorkflow(env, chatId, topic, options = {}) {
   if (!env.GITHUB_TOKEN) {
     await telegram(env, "sendMessage", {
@@ -781,10 +814,15 @@ async function handleMessage(env, message) {
   const fixMatch = raw.match(/^\/fix\s+#?(\d{1,4})$/i);
   if (fixMatch) {
     const number = String(Number(fixMatch[1])).padStart(4, "0");
+    return dispatchWorkflowRepair(env, chatId, number);
+  }
+  const remakeMatch = raw.match(/^\/remake\s+#?(\d{1,4})$/i);
+  if (remakeMatch) {
+    const number = String(Number(remakeMatch[1])).padStart(4, "0");
     await env.QUIZ_STATE.put("video-fix-pending:" + chatId, JSON.stringify({ number }), { expirationTtl: 900 });
     return telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "🛠️ Repair request for VIDEO #" + number + "\n\nSend the details in this format:\nTopic: How an airplane engine works\nProblems: scenes repeat, shots are disconnected, narration is unclear.\n\nI'll create a corrected remake. It will receive a new video number; the original will not be overwritten."
+      text: "🎬 QUALITY REMAKE for VIDEO #" + number + "\n\nSend the details:\nTopic: How an airplane engine works\nProblems: scenes repeat, shots are disconnected, narration is unclear.\n\nI'll create a new video with those improvements. This does not repair a failed GitHub workflow."
     });
   }
   const pendingVideoFix = await env.QUIZ_STATE.get("video-fix-pending:" + chatId, "json");
@@ -851,13 +889,13 @@ async function handleMessage(env, message) {
   if (text === "/voice" || text === "🎙 voice settings") return showVoiceSettings(env, chatId);
   if (text === "📊 video feedback") return handleMessage(env, { ...message, text: "/feedback" });
   if (text === "/help" || text === "🆘 help") {
-    return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/fix 0003 — request a corrected remake of video #0003\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
+    return showMainMenu(env, chatId, "🎬 AI Shorts Bot\n\n/video — request a new educational video\n/fix 0004 — diagnose/repair the failed generation workflow\n/remake 0004 — request a corrected video-quality remake\n/feedback — view saved feedback\n/youtube — manage YouTube uploads\n\nSend a topic and choose cinematic quality. The finished video will be sent here.");
   }
   if (!raw.startsWith("/")) {
     return telegram(env, "sendMessage", { chat_id: chatId, text: "This bot now handles AI Shorts only. Tap 🎥 Request New Video or send /video. Use /youtube for uploads and /feedback for video feedback." });
   }
   if (raw.startsWith("/") && !["/start", "/video", "/feedback", "/youtube", "/help"].includes(text)) {
-    return telegram(env, "sendMessage", { chat_id: chatId, text: "Quiz features are disabled. This bot is now for AI Shorts only. Use /video to request a video." });
+    return telegram(env, "sendMessage", { chat_id: chatId, text: "Quiz features are disabled. This bot is now for AI Shorts only. Use /video to request a video. Use /fix 0004 to repair a failed workflow or /remake 0004 for video-quality changes." });
   }
   if (text === "/subjects") return showSubjects(env, chatId);
   if (text === "/chapters" || text === "/topics") return showTopicSubjects(env, chatId);
