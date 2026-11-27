@@ -176,10 +176,10 @@ async function showFullPaperOptions(env, chatId) {
   }
   const complete = [...groups.entries()].filter(([, qs]) => qs.length >= 75);
   if (!complete.length) {
-    const summary = [...groups.entries()].map(([key, qs]) => key.replace("|", " ") + ": " + qs.length + "/75").join("\\n");
+    const summary = [...groups.entries()].map(([key, qs]) => key.replace("|", " ") + ": " + qs.length + "/75").join("\n");
     await telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "📝 Full PYQ Paper mode is available, but no shift in the current local bank has all 75 questions yet. I will not label a partial set as a full paper. Current coverage:\\n" + (summary || "No complete shift imported yet.")
+      text: "📝 Full PYQ Paper mode is available, but no shift in the current local bank has all 75 questions yet. I will not label a partial set as a full paper. Current coverage:\n" + (summary || "No complete shift imported yet.")
     });
     return;
   }
@@ -712,7 +712,7 @@ async function showVoiceSettings(env, chatId) {
   }]);
   await telegram(env, "sendMessage", {
     chat_id: chatId,
-    text: "🎙 KOKORO HINDI NARRATOR\\n\\nChoose the voice for your next video. Current voice: " + current + "\\n\\nDefault: hm_omega. Your choice is saved for future video requests.",
+    text: "🎙 KOKORO HINDI NARRATOR\n\nChoose the voice for your next video. Current voice: " + current + "\n\nDefault: hm_omega. Your choice is saved for future video requests.",
     reply_markup: { inline_keyboard: rows }
   });
 }
@@ -956,7 +956,7 @@ async function handleCallback(env, callback) {
     const voice = KOKORO_VOICE_OPTIONS.find(item => item.id === voiceId);
     return telegram(env, "sendMessage", {
       chat_id: chatId,
-      text: "✅ Narrator saved: " + voice.label + " (" + voiceId + ").\\nThis voice will be used for your next video."
+      text: "✅ Narrator saved: " + voice.label + " (" + voiceId + ").\nThis voice will be used for your next video."
     });
   }
   if (parts[0] !== "video") return;
