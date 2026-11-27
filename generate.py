@@ -671,7 +671,7 @@ def assemble_final_video(joined, voice, scenes, audio_files):
     if not final_video.exists() or final_video.stat().st_size < 10000: raise RuntimeError('Final MP4 was not created correctly.')
     return final_video
 
-def send_telegram(video, title):
+def send_telegram(video, title, video_number='', section='General'):
 
     bot = os.getenv("TELEGRAM_BOT_TOKEN")
     chat = os.getenv("TELEGRAM_CHAT_ID")
@@ -689,8 +689,9 @@ def send_telegram(video, title):
             data={
                 "chat_id": chat,
                 "caption": (
-                    f"🎬 {title}\n"
-                    "Your AI historical Short is ready!"
+                    f"🎬 VIDEO #{video_number} — {title}\n"
+                    f"Section: {section}\n"
+                    "Your educational Short is ready!"
                 )
             },
             files={
@@ -786,7 +787,9 @@ def main():
 
         send_telegram(
             final_video,
-            story["title"]
+            story["title"],
+            story.get("video_number", ""),
+            story.get("section", "General")
         )
 
         tracker.finish(
