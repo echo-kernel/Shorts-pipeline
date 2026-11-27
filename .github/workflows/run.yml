@@ -716,11 +716,11 @@ jobs:
               section = story.get('section', 'Not assigned yet')
               topic = story.get('topic', '')
               title = story.get('title', '')
-              text = ('❌ VIDEO #' + number + ' — PROCESS FAILED\\n'
-                      + 'Section: ' + section + '\\n'
-                      + ('Title: ' + title + '\\n' if title else '')
-                      + ('Topic: ' + topic + '\\n' if topic else '')
-                      + '\\nA workflow step failed. Tap Track Video Progress to open the failed step and logs.')
+              text = ('❌ VIDEO #' + number + ' — PROCESS FAILED\n'
+                      + 'Section: ' + section + '\n'
+                      + ('Title: ' + title + '\n' if title else '')
+                      + ('Topic: ' + topic + '\n' if topic else '')
+                      + '\nA workflow step failed. Tap Track Video Progress to open the failed step and logs.')
               markup = {'inline_keyboard': [[{'text': '📊 Track Video Progress', 'url': os.environ['TRACK_URL']}]]}
               payload = {'chat_id': chat, 'message_id': int(mid), 'text': text, 'reply_markup': markup}
               req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps(payload).encode(), headers={'Content-Type':'application/json'}, method='POST')
