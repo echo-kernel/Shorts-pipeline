@@ -321,14 +321,27 @@ jobs:
                   print("Kaggle generation completed successfully.")
                   break
               if status in {"ERROR", "FAILED", "CANCELLED"}:
-                  raise SystemExit(f"Kaggle generation ended with status: {status}")
+                  print(f"Kaggle ended with status {status}. Attempting output recovery before failing.")
+                  logs = subprocess.run(
+                      ["kaggle", "kernels", "logs", kernel],
+                      capture_output=True,
+                      text=True
+                  )
+                  print("===== KAGGLE NOTEBOOK LOGS =====")
+                  print(logs.stdout or "(no stdout log returned)")
+                  if logs.stderr:
+                      print(logs.stderr)
+                  print("===== END KAGGLE NOTEBOOK LOGS =====")
+                  # Do not fail here: the notebook may have saved the MP4 before
+                  # a later cleanup/upload step crashed. Continue to output download.
+                  break
 
               print(f"Current Kaggle status: {status or 'not recognized yet'}; checking again in 60 seconds.")
               time.sleep(interval_seconds)
           else:
               raise SystemExit("Timed out after 350 minutes waiting for Kaggle. Check the Kaggle notebook output.")
 
-          print("Kaggle completed. Downloading the notebook output through the Kaggle API.")
+          print("Attempting to download Kaggle notebook output (including after ERROR).")
           PY
 
       - name: Download completed video from Kaggle
@@ -432,7 +445,7 @@ jobs:
               try:
                   requests.post(
                       f"https://api.telegram.org/bot{token}/sendMessage",
-                      data={"chat_id": chat, "text": "❌ AI Explainer Shorts could not be submitted to Kaggle. Check the GitHub Actions run for the exact setup or submission error."},
+                      data={"chat_id": chat, "text": "⚠️ AI Explainer Shorts generation or video recovery failed. The workflow checked Kaggle logs and attempted to recover any saved MP4. Open GitHub Actions for the exact error."},
                       timeout=20
                   ).raise_for_status()
               except Exception as exc:
