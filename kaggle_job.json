@@ -6,6 +6,7 @@
   "title": "How a Flush Toilet Works",
   "chat_id": "7270191128",
   "submitted_at": "2026-11-27T19:00:18.841050+00:00",
-  "status": "SUBMITTED",
-  "last_notified_status": ""
+  "status": "ERROR",
+  "last_notified_status": "ERROR",
+  "last_checked_at": "2026-11-27T21:55:35.927385+00:00"
 }
