@@ -181,11 +181,11 @@ jobs:
           )
           # Missing artifacts and application failures must never be retried as transient errors.
           concat_list_bug = bool(re.search(
-              r"scene_\\d+\\.mp3nfile|Impossible to open.*\\.mp3nfile|Error opening input file output/work/voice_concat\\.txt",
+              r"scene_\d+\.mp3nfile|Impossible to open.*\.mp3nfile|Error opening input file output/work/voice_concat\.txt",
               logs, re.I
           ))
-          missing_mp4 = bool(re.search(r"no mp4 was found|mp4.{0,80}(missing|not found)|no such file.*\\.mp4|output.{0,80}(empty|missing)", logs, re.I))
-          fatal_markers = bool(re.search(r"Traceback \\(most recent call last\\)|SystemExit:|RuntimeError:|ModuleNotFoundError|ImportError|No space left on device|permission denied|CalledProcessError", logs, re.I))
+          missing_mp4 = bool(re.search(r"no mp4 was found|mp4.{0,80}(missing|not found)|no such file.*\.mp4|output.{0,80}(empty|missing)", logs, re.I))
+          fatal_markers = bool(re.search(r"Traceback \(most recent call last\)|SystemExit:|RuntimeError:|ModuleNotFoundError|ImportError|No space left on device|permission denied|CalledProcessError", logs, re.I))
           transient = bool(re.search(transient_pattern, logs, re.I)) and not missing_mp4 and not fatal_markers
           if concat_list_bug:
               diagnosis = {
