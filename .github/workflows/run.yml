@@ -106,7 +106,7 @@ jobs:
           Return ONLY JSON with topic,title,voiceover,scenes. scenes must contain 6–9 objects:
           {{"topic":"...","title":"...","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"Detailed English 3D cartoon animation prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
           Each scene must include mode, visual_prompt, tts_text and caption_text.
-          tts_text MUST be natural spoken Hindi in Devanagari only. Use a natural Hindi male narration style; write technical terms in Devanagari pronunciation, while keeping the explanation scientifically precise.
+          tts_text MUST be natural spoken Hindi in Devanagari only. Use a natural Hindi male narration style; write technical terms in Devanagari pronunciation, while keeping the explanation scientifically precise. Do not use any Latin/English alphabet characters (A-Z or a-z) anywhere in tts_text; write every technical term phonetically in Devanagari.
           caption_text MUST be clean Hinglish/Roman Hindi, short and faithful to tts_text.
           Scene tts_text fields combined are the complete narration and must flow naturally, with each sentence explaining exactly what its own scene shows.
           Use mode="map" ONLY for countries, cities, borders, geographic locations, travel, shipping or trade routes. All science, engineering, technology, history, machines, forts, vehicles and concepts use mode="render".
@@ -139,16 +139,17 @@ jobs:
               for attempt in range(3):
                   try:
                       print(f"Generating story with {model} (attempt {attempt + 1}/3)")
+                      attempt_prompt = prompt if attempt == 0 else (prompt + "\\nIMPORTANT: Your previous response failed JSON/schema/language validation. Return valid JSON only, with 6–9 scenes and tts_text containing Devanagari characters exclusively; no Latin letters at all. Keep technical terms in Devanagari phonetic spelling.")
                       response = client.models.generate_content(
                           model=model,
-                          contents=prompt,
+                          contents=attempt_prompt,
                           config={"response_mime_type": "application/json"}
                       )
                       data = json.loads(response.text.strip())
                       audit_prompt = (
                           "Fact-check science, engineering, history and geography. Verify every scene visual actually illustrates its narration, that machine parts are arranged correctly, that connected scenes retain one identical model design, and that the output is polished 3D cartoon animation rather than photorealistic CGI. Preserve keys topic,title,voiceover,scenes "
                           "and each scene object keys mode,visual_prompt,tts_text,caption_text,map_center,map_zoom,route_points. "
-                          "Keep tts_text in Devanagari Hindi and caption_text in Roman Hinglish. Use map only for explicit geographic scenes. "
+                          "Keep tts_text exclusively in Devanagari Hindi with absolutely no Latin letters; transliterate every technical term into Devanagari. Keep caption_text in Roman Hinglish. Use map only for explicit geographic scenes. " +
                           "Correct inaccurate claims, physical mechanisms, scene-to-narration mismatches, machine construction, scene continuity, cartoon style consistency and map coordinates. Remove generic or unrelated visuals. Return corrected JSON only. Draft: "
                           + json.dumps(data, ensure_ascii=False)
                       )
@@ -186,14 +187,19 @@ jobs:
                   except Exception as exc:
                       failures.append(f"{model}: {type(exc).__name__}: {exc}")
                       print(f"{model} failed: {type(exc).__name__}: {exc}")
-                      if attempt < 2 and is_transient_error(exc):
-                          delay = 20 * (2 ** attempt)
-                          print(f"Transient Gemini service/rate-limit error. Retrying {model} in {delay}s.")
+                      if attempt < 2:
+                          if is_transient_error(exc):
+                              delay = 20 * (2 ** attempt)
+                              print(f"Transient Gemini service/rate-limit error. Retrying {model} in {delay}s.")
+                          else:
+                              delay = 5 * (2 ** attempt)
+                              print(f"Invalid JSON/schema/language or other model response error. Retrying {model} with stricter instructions in {delay}s.")
                           time.sleep(delay)
                           continue
                       if is_transient_error(exc):
                           print(f"{model} remained temporarily unavailable after 3 attempts; moving to the next fallback model.")
-                      break
+                      else:
+                          print(f"{model} failed validation after 3 attempts; moving to the next fallback model.")
 
           raise SystemExit("All Gemini models failed:\n" + "\n".join(failures[-6:]))
           PY
