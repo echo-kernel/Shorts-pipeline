@@ -393,7 +393,15 @@ jobs:
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
         run: |
+          set -euo pipefail
           kaggle kernels push -p kaggle
+          # The story/voice injection edits this tracked runner file only so
+          # Kaggle receives the payload. Restore the GitHub checkout immediately
+          # after the remote Kaggle version has been submitted; otherwise the
+          # following record-save step cannot rebase with a dirty worktree.
+          git checkout -- kaggle/kaggle_runner.py
+          echo "Restored GitHub runner after successful Kaggle submission."
+          git status --short
 
       - name: Save submitted topic and Kaggle job record
         env:
