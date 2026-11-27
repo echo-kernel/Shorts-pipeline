@@ -428,13 +428,15 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
-          token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
-          text = '🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle GPU job submitted\n🟡 Waiting for Kaggle GPU / rendering\n⚪ Creating scenes and Hindi narration\n⚪ Assembling subtitles and final MP4'
-          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
-          urllib.request.urlopen(req, timeout=20).read()
+          from pathlib import Path
+          story=json.loads(Path('kaggle/story.json').read_text(encoding='utf-8'))
+          text='🎬 VIDEO #' + os.environ['VIDEO_NUMBER'] + '\nSection: ' + story.get('section','General') + '\nTopic: ' + story.get('topic','') + '\n\n✅ Story generated and checked\n✅ Kaggle GPU job submitted\n🟡 Waiting for Kaggle GPU / rendering\n⚪ Creating scenes and Hindi narration\n⚪ Assembling subtitles and final MP4'
+          req=urllib.request.Request('https://api.telegram.org/bot'+os.environ['TELEGRAM_BOT_TOKEN']+'/editMessageText',data=json.dumps({'chat_id':os.environ['TELEGRAM_CHAT_ID'],'message_id':int(os.environ['PROGRESS_MESSAGE_ID']),'text':text}).encode(),headers={'Content-Type':'application/json'},method='POST')
+          urllib.request.urlopen(req,timeout=20).read()
           PY
 
       - name: Wait for Kaggle generation to finish
@@ -443,6 +445,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json
@@ -462,11 +465,14 @@ jobs:
           token = os.environ['TELEGRAM_BOT_TOKEN']
           chat = os.environ['TELEGRAM_CHAT_ID']
           message_id = int(os.environ['PROGRESS_MESSAGE_ID'])
+          video_number = os.environ['VIDEO_NUMBER']
+          story = json.loads(__import__('pathlib').Path('kaggle/story.json').read_text(encoding='utf-8'))
+          section, topic = story.get('section', 'General'), story.get('topic', '')
           def update_telegram(status, elapsed):
               if 'QUEUED' in status: label = 'Kaggle has queued the GPU job'
               elif 'RUNNING' in status: label = 'Kaggle GPU notebook is running; scenes and narration are processing'
               else: label = 'Kaggle status: ' + status
-              message = ('🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle job submitted\n🟡 ' + label + '\n⚪ Final editing and MP4 recovery\n\nKaggle status: ' + status + '\nTime on Kaggle: ' + str(elapsed // 60) + ' min ' + str(elapsed % 60) + ' sec\n\nThis message refreshes automatically.')
+              message = ('🎬 VIDEO #' + video_number + '\nSection: ' + section + '\nTopic: ' + topic + '\n\n✅ Story generated and checked\n✅ Kaggle job submitted\n🟡 ' + label + '\n⚪ Final editing and MP4 recovery\n\nKaggle status: ' + status + '\nTime on Kaggle: ' + str(elapsed // 60) + ' min ' + str(elapsed % 60) + ' sec\n\nThis message refreshes automatically.')
               req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':message_id,'text':message}).encode(), headers={'Content-Type':'application/json'}, method='POST')
               try: urllib.request.urlopen(req, timeout=20).read()
               except Exception as exc: print('Telegram update warning:', type(exc).__name__, str(exc)[:150])
