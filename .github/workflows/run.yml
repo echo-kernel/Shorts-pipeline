@@ -282,8 +282,8 @@ jobs:
           if voice_id not in {"hm_omega", "hm_psi", "hf_alpha", "hf_beta"}:
               raise SystemExit("Invalid Kokoro voice selection.")
           injection = (
-              "VIDEO_STORY_JSON = " + repr(payload) + "\\n"
-              + "KOKORO_VOICE_ID = " + repr(voice_id) + "\\n"
+              "VIDEO_STORY_JSON = " + repr(payload) + "\n"
+              + "KOKORO_VOICE_ID = " + repr(voice_id) + "\n"
               + anchor
           )
           if anchor not in source:
@@ -430,7 +430,7 @@ jobs:
           mkdir -p kaggle-download
           kaggle kernels output apuravjadhav/shorts-pipeline-wan -p kaggle-download
           echo "Downloaded Kaggle output:"
-          find kaggle-download -type f -printf '%p (%s bytes)\\n'
+          find kaggle-download -type f -printf '%p (%s bytes)\n'
 
       - name: Validate and add video to repository
         run: |
