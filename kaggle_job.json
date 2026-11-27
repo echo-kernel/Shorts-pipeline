@@ -1,10 +1,9 @@
 {
   "kernel": "apuravjadhav/shorts-pipeline-wan",
-  "topic": "How Skyscraper Tuned Mass Dampers Work",
-  "title": "How Giant Pendulums Save Skyscrapers",
+  "topic": "How a Hydroelectric Dam Generates Electricity",
+  "title": "Hydel Power Kaise Banta Hai",
   "chat_id": "7270191128",
-  "submitted_at": "2026-11-26T19:18:06.426493+00:00",
-  "status": "ERROR",
-  "last_notified_status": "ERROR",
-  "last_checked_at": "2026-11-27T03:30:32.378071+00:00"
+  "submitted_at": "2026-11-27T13:53:19.732594+00:00",
+  "status": "SUBMITTED",
+  "last_notified_status": ""
 }
