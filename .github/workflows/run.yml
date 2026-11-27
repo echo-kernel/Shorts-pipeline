@@ -530,11 +530,14 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
+          from pathlib import Path
           token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
-          text = "🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle GPU processing finished\n🟡 Downloading and validating the MP4\n⚪ Saving the finished video\n⚪ Starting YouTube upload"
+          story=json.loads(Path('kaggle/story.json').read_text(encoding='utf-8'))
+          text = '🎬 VIDEO #' + os.environ['VIDEO_NUMBER'] + '\nSection: ' + story.get('section','General') + '\nTopic: ' + story.get('topic','') + '\n\n✅ Story generated and checked\n✅ Kaggle GPU processing finished\n🟡 Downloading and validating the MP4\n⚪ Saving the finished video\n⚪ Starting YouTube upload'
           req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
           urllib.request.urlopen(req, timeout=20).read()
           PY
@@ -597,11 +600,14 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
+          from pathlib import Path
           token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
-          text = "🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle rendering finished\n✅ Final MP4 downloaded and saved to the repository\n🟡 Starting YouTube upload\n\nThe YouTube workflow will send its result separately."
+          story=json.loads(Path('kaggle/story.json').read_text(encoding='utf-8'))
+          text = '🎬 VIDEO #' + os.environ['VIDEO_NUMBER'] + '\nSection: ' + story.get('section','General') + '\nTopic: ' + story.get('topic','') + '\n\n✅ Story generated and checked\n✅ Kaggle rendering finished\n✅ Final MP4 downloaded and saved to the repository\n🟡 Starting YouTube upload\n\nThe YouTube workflow will send its result separately.'
           req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
           urllib.request.urlopen(req, timeout=20).read()
           PY
@@ -613,6 +619,7 @@ jobs:
         run: |
           set -euo pipefail
           VIDEO_TITLE="$(python -c 'import json; print(json.load(open("kaggle/story.json", encoding="utf-8")).get("title", "AI Educational Short"))')"
+          VIDEO_TITLE="[VIDEO #${{ steps.video_identity.outputs.number }}] $VIDEO_TITLE"
           export VIDEO_TITLE
           python - <<'PY'
           import json, os, urllib.request
