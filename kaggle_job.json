@@ -1,9 +1,11 @@
 {
   "kernel": "apuravjadhav/shorts-pipeline-wan",
-  "topic": "How a Particle Accelerator Works",
-  "title": "पार्टिकल एक्सीलेटर कैसे काम करता है",
+  "video_number": "0003",
+  "section": "Engineering",
+  "topic": "How a Flush Toilet Mechanism Works",
+  "title": "फ्लश टॉयलेट का मैकेनिज्म कैसे काम करता है?",
   "chat_id": "7270191128",
-  "submitted_at": "2026-11-27T17:45:30.550037+00:00",
+  "submitted_at": "2026-11-27T18:33:34.111140+00:00",
   "status": "SUBMITTED",
   "last_notified_status": ""
 }
