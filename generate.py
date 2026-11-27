@@ -42,6 +42,7 @@ TOPIC = os.getenv(
 )
 
 PRIMARY_TTS_VOICE = "en-US-AndrewMultilingualNeural"
+FALLBACK_TTS_VOICE = "hi-IN-MadhurNeural"
 TTS_RATE = "+10%"
 TTS_PITCH = "-2Hz"
 
@@ -409,95 +410,145 @@ Requirements:
     )
 
 
-async def create_voice(text, filename, voice, scene_number):
-    # Edge TTS can occasionally close a request without returning audio.
-    # Retry transient failures instead of aborting the complete video job.
-    delays = (3, 8, 15)
-    last_error = None
+async def create_voice(text, filename, primary_voice, fallback_voice, scene_number):
+    # Andrew remains the preferred voice. Only switch to the backup after
+    # all three Andrew attempts fail for this scene.
+    voice_plan = (
+        (primary_voice, "primary"),
+        (fallback_voice, "backup"),
+    )
+    delays = (3, 8)
+    failures = []
 
-    for attempt in range(1, 4):
-        try:
-            if filename.exists():
-                filename.unlink()
+    for voice, role in voice_plan:
+        for attempt in range(1, 4):
+            try:
+                if filename.exists():
+                    filename.unlink()
 
-            communicate = edge_tts.Communicate(
-                text=text,
-                voice=voice,
-                rate=TTS_RATE,
-                pitch=TTS_PITCH,
-                volume="+0%"
-            )
+                communicate = edge_tts.Communicate(
+                    text=text,
+                    voice=voice,
+                    rate=TTS_RATE,
+                    pitch=TTS_PITCH,
+                    volume="+0%"
+                )
 
-            await asyncio.wait_for(
-                communicate.save(str(filename)),
-                timeout=90
-            )
+                await asyncio.wait_for(
+                    communicate.save(str(filename)),
+                    timeout=90
+                )
 
-            if not filename.exists() or filename.stat().st_size < 500:
-                raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
+                if not filename.exists() or filename.stat().st_size < 500:
+                    raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
 
-            # Confirm the downloaded file is a readable audio stream.
-            subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    str(filename)
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=20
-            )
+                subprocess.run(
+                    [
+                        "ffprobe", "-v", "error",
+                        "-show_entries", "format=duration",
+                        "-of", "default=noprint_wrappers=1:nokey=1",
+                        str(filename)
+                    ],
+                    check=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=20
+                )
 
-            print(f"Andrew TTS succeeded for scene {scene_number} (attempt {attempt}/3).")
-            return
+                print(
+                    f"TTS succeeded for scene {scene_number} using {voice} "
+                    f"({role}, attempt {attempt}/3)."
+                )
+                return voice
 
-        except Exception as exc:
-            last_error = exc
-            if filename.exists():
-                filename.unlink()
+            except Exception as exc:
+                if filename.exists():
+                    filename.unlink()
 
-            if attempt == 3:
-                break
+                error = f"{voice} attempt {attempt}/3: {type(exc).__name__}: {exc}"
+                failures.append(error)
+                print(f"Edge TTS scene {scene_number} failed: {error}")
 
-            wait = delays[attempt - 1]
+                if attempt < 3:
+                    wait = delays[attempt - 1]
+                    tracker.retries += 1
+                    tracker.update(
+                        18,
+                        "Retrying Hindi narration",
+                        f"Scene {scene_number}: {role} voice attempt {attempt}/3 failed. "
+                        f"Retrying in {wait}s."
+                    )
+                    await asyncio.sleep(wait)
+
+        if role == "primary":
             tracker.retries += 1
             tracker.update(
                 18,
-                "Retrying Hindi narration",
-                f"Scene {scene_number}: Andrew TTS attempt {attempt}/3 failed "
-                f"({type(exc).__name__}). Retrying in {wait}s."
+                "Switching narration backup voice",
+                f"Andrew failed 3 times for scene {scene_number}; trying Hindi backup voice."
             )
             print(
-                f"Edge TTS scene {scene_number} attempt {attempt}/3 failed: "
-                f"{type(exc).__name__}: {exc}. Retrying in {wait}s."
+                f"Andrew failed all 3 attempts for scene {scene_number}. "
+                f"Switching to backup voice {fallback_voice}."
             )
-            await asyncio.sleep(wait)
 
     raise RuntimeError(
-        f"Andrew Edge TTS failed for scene {scene_number} after 3 attempts: "
-        f"{type(last_error).__name__}: {last_error}"
-    ) from last_error
+        f"Both primary and backup Edge TTS voices failed for scene {scene_number}. "
+        + " | ".join(failures[-6:])
+    )
 
 
 def generate_scene_audio(scenes):
     audio_files = []
-    voice_dir = WORK_DIR / 'voice'
+    voices_used = []
+    voice_dir = WORK_DIR / "voice"
     voice_dir.mkdir(exist_ok=True)
+
     for index, scene in enumerate(scenes, 1):
-        raw = voice_dir / f'scene_{index:02d}_raw.mp3'
-        trimmed = voice_dir / f'scene_{index:02d}.mp3'
-        asyncio.run(create_voice(scene['tts_text'], raw, PRIMARY_TTS_VOICE, index))
-        run_command(['ffmpeg','-y','-i',str(raw),'-af','silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB','-ar','48000','-ac','2','-c:a','libmp3lame','-q:a','2',str(trimmed)])
-        if not trimmed.exists() or trimmed.stat().st_size < 500: raise RuntimeError(f'Scene {index} audio is empty after trimming.')
+        raw = voice_dir / f"scene_{index:02d}_raw.mp3"
+        trimmed = voice_dir / f"scene_{index:02d}.mp3"
+
+        selected_voice = asyncio.run(
+            create_voice(
+                scene["tts_text"],
+                raw,
+                PRIMARY_TTS_VOICE,
+                FALLBACK_TTS_VOICE,
+                index
+            )
+        )
+
+        run_command([
+            "ffmpeg", "-y", "-i", str(raw),
+            "-af",
+            "silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB",
+            "-ar", "48000", "-ac", "2",
+            "-c:a", "libmp3lame", "-q:a", "2", str(trimmed)
+        ])
+
+        if not trimmed.exists() or trimmed.stat().st_size < 500:
+            raise RuntimeError(f"Scene {index} audio is empty after trimming.")
+
         audio_files.append(trimmed)
-    concat = WORK_DIR / 'voice_concat.txt'
-    concat.write_text(''.join("file '" + str(p.resolve()) + "'\n" for p in audio_files), encoding='utf-8')
-    voice = OUTPUT_DIR / 'narration.mp3'
-    run_command(['ffmpeg','-y','-f','concat','-safe','0','-i',str(concat),'-c:a','libmp3lame','-q:a','2',str(voice)])
-    (OUTPUT_DIR / 'voice_used.txt').write_text(PRIMARY_TTS_VOICE + chr(10), encoding='utf-8')
-    print('VOICE_USED=' + PRIMARY_TTS_VOICE)
+        voices_used.append(selected_voice)
+
+    concat = WORK_DIR / "voice_concat.txt"
+    concat.write_text(
+        "".join("file '" + str(path.resolve()) + "'\\n" for path in audio_files),
+        encoding="utf-8"
+    )
+
+    voice = OUTPUT_DIR / "narration.mp3"
+    run_command([
+        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        "-i", str(concat), "-c:a", "libmp3lame", "-q:a", "2", str(voice)
+    ])
+
+    (OUTPUT_DIR / "voice_used.txt").write_text(
+        "".join(f"Scene {i}: {voice_name}\\n" for i, voice_name in enumerate(voices_used, 1)),
+        encoding="utf-8"
+    )
+    print("VOICE_USED_BY_SCENE=" + ", ".join(voices_used))
     return voice, audio_files
 
 def make_scene_srt(scenes, audio_files, filename):
