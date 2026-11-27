@@ -128,7 +128,18 @@ jobs:
                       break
               if len(matches) != 1:
                   reason = "No exact failed run matched" if not matches else "More than one failed run matched"
-                  print(reason + " video #" + manual_video + " on branch " + branch + ". No run was retried or modified.")
+                  message = reason + " VIDEO #" + manual_video + " on branch " + branch + ". No run was retried or modified."
+                  print(message)
+                  bot, chat = os.getenv("TELEGRAM_BOT_TOKEN"), os.getenv("TELEGRAM_CHAT_ID")
+                  if bot and chat:
+                      try:
+                          requests.post(
+                              f"https://api.telegram.org/bot{bot}/sendMessage",
+                              json={"chat_id": chat, "text": "🛠 SHORTS WORKFLOW SELF-HEAL\\n" + message},
+                              timeout=20
+                          ).raise_for_status()
+                      except Exception as exc:
+                          print("Telegram no-match notification failed:", type(exc).__name__, str(exc)[:160])
                   sys.exit(0)
               selected = matches[0]
               run_id = int(selected["id"])
