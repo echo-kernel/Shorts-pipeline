@@ -81,6 +81,8 @@ jobs:
 
       - name: Allocate continuous video number
         id: video_identity
+        env:
+          REQUESTED_VIDEO_NUMBER: ${{ inputs.video_number || '' }}
         run: |
           python - <<'PY'
           import json, os, re, subprocess
@@ -134,7 +136,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
           VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
-          REQUESTED_VIDEO_NUMBER: ${{ inputs.video_number || '' }}
           TRACK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python - <<'PY'
