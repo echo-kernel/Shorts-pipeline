@@ -18,6 +18,16 @@ on:
         required: false
         type: string
         default: ""
+      voice_id:
+        description: "Kokoro Hindi narrator voice"
+        required: false
+        type: choice
+        options:
+          - hm_omega
+          - hm_psi
+          - hf_alpha
+          - hf_beta
+        default: hm_omega
 
 permissions:
   contents: write
@@ -254,10 +264,13 @@ jobs:
           raise SystemExit("All configured Gemini models failed initial story validation:\n" + "\n".join(failures[-6:]))
           PY
 
-      - name: Inject story into the private Kaggle kernel source
+      - name: Inject story and Kokoro voice into the private Kaggle kernel source
+        env:
+          KOKORO_VOICE_ID: ${{ inputs.voice_id || 'hm_omega' }}
         run: |
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           runner = Path("kaggle/kaggle_runner.py")
@@ -265,13 +278,19 @@ jobs:
           anchor = 'REPO = "https://github.com/echo-kernel/Shorts-pipeline.git"'
           story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
           payload = json.dumps(story, ensure_ascii=False, separators=(",", ":"))
-          injection = "VIDEO_STORY_JSON = " + repr(payload) + "\n" + anchor
-
+          voice_id = os.environ.get("KOKORO_VOICE_ID", "hm_omega")
+          if voice_id not in {"hm_omega", "hm_psi", "hf_alpha", "hf_beta"}:
+              raise SystemExit("Invalid Kokoro voice selection.")
+          injection = (
+              "VIDEO_STORY_JSON = " + repr(payload) + "\\n"
+              + "KOKORO_VOICE_ID = " + repr(voice_id) + "\\n"
+              + anchor
+          )
           if anchor not in source:
               raise SystemExit("Runner insertion point not found; refusing to submit.")
           source = source.replace(anchor, injection, 1)
           runner.write_text(source, encoding="utf-8")
-          print("Generated story embedded. No Gemini or Telegram credentials are sent to Kaggle.")
+          print("Generated story and Kokoro voice embedded. No Gemini or Telegram credentials are sent to Kaggle.")
           PY
 
       - name: Check Kaggle kernel is not already queued or running
