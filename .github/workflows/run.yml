@@ -283,6 +283,7 @@ jobs:
                               f"Reason: {type(audit_error).__name__}: {audit_error}"
                           )
 
+                      data["video_number"] = os.environ["VIDEO_NUMBER"]
                       data["gemini_model"] = model
                       Path("kaggle/story.json").write_text(
                           json.dumps(data, ensure_ascii=False, separators=(",", ":")),
