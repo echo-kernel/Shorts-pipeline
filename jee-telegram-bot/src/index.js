@@ -791,6 +791,18 @@ async function handleMessage(env, message) {
     });
     return;
   }
+  // If the user is replying with a video topic, consume it before the generic AI-Shorts-only reply.
+  const videoTopicPending = await env.QUIZ_STATE.get("video-pending:" + chatId);
+  if (videoTopicPending && raw && !raw.startsWith("/")) {
+    await env.QUIZ_STATE.delete("video-pending:" + chatId);
+    const topic = raw.slice(0, 500);
+    await env.QUIZ_STATE.put("video-topic:" + chatId, topic, { expirationTtl: 900 });
+    return telegram(env, "sendMessage", {
+      chat_id: chatId,
+      text: "✅ Topic received:\\n" + topic + "\\n\\nReady to create your AI Short?",
+      reply_markup: { inline_keyboard: [[{ text: "🎬 Generate cinematic video", callback_data: "video:cinematic" }], [{ text: "✖ Cancel", callback_data: "video:cancel" }]] }
+    });
+  }
   if (text === "/youtube" || text === "📤 youtube uploads") return showYouTubeUploads(env, chatId);
   if (text === "/feedback") {
     const items = await env.QUIZ_STATE.get("video-feedback:global", "json") || [];
@@ -959,7 +971,6 @@ async function handleCallback(env, callback) {
       text: "✅ Narrator saved: " + voice.label + " (" + voiceId + ").\nThis voice will be used for your next video."
     });
   }
-  if (parts[0] !== "video") return;
   if (parts[0] === "section") {
     if (parts[1] === "video") return askVideoTopic(env, chatId);
     if (parts[1] === "youtube") return showYouTubeUploads(env, chatId);
@@ -972,6 +983,7 @@ async function handleCallback(env, callback) {
     if (parts[1] === "progress") return showProgress(env, chatId);
     if (parts[1] === "mistakes") return showMistakes(env, chatId);
   }
+  if (parts[0] !== "video" && parts[0] !== "count" && parts[0] !== "timing" && parts[0] !== "duration" && parts[0] !== "fullpaper" && parts[0] !== "fullpaper-start" && parts[0] !== "fullpaper-cancel" && parts[0] !== "year" && parts[0] !== "year-subject" && parts[0] !== "subject" && parts[0] !== "topic-subject" && parts[0] !== "topic") return;
   if (parts[0] === "count") {
     const pending = await env.QUIZ_STATE.get("pending:" + chatId, "json");
     if (!pending) return telegram(env, "sendMessage", { chat_id: chatId, text: "Please choose the PYQ section again." });
