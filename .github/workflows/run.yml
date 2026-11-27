@@ -103,11 +103,13 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
           token, chat = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID']
-          text = '🎬 AI VIDEO PROCESS\n\n🟡 Request accepted\n⚪ Writing and checking story\n⚪ Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Editing final video\n\nTopic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:350]
+          number = os.environ['VIDEO_NUMBER']
+          text = '🎬 VIDEO #' + number + '\nSection: Classifying topic…\n\n🟡 Request accepted\n⚪ Writing and checking story\n⚪ Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Editing final video\n\nRequested topic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:300]
           req = urllib.request.Request(f'https://api.telegram.org/bot{token}/sendMessage', data=json.dumps({'chat_id':chat,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
           with urllib.request.urlopen(req, timeout=20) as r: data = json.loads(r.read().decode())
           if not data.get('ok'): raise SystemExit('Could not create Telegram progress message')
@@ -119,6 +121,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
           VIDEO_FEEDBACK: ${{ inputs.feedback || '' }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json
@@ -153,8 +156,8 @@ jobs:
           prompt = f"""
           Create an accurate vertical 9:16 educational explainer Short in a polished 3D CARTOON ANIMATION style.
           {topic_instruction}
-          Return ONLY JSON with topic,title,voiceover,scenes. scenes must contain 6–9 objects:
-          {{"topic":"...","title":"...","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"Detailed English 3D cartoon animation prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
+          Return ONLY JSON with topic,title,section,voiceover,scenes. section must be exactly one of: Science, Engineering, Technology, Transport, History, Architecture, Space, General. Choose the best single section for the main subject. scenes must contain 6–9 objects:
+          {{"topic":"...","title":"...","section":"Engineering","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"Detailed English 3D cartoon animation prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
           Each scene must include mode, visual_prompt, tts_text and caption_text.
           tts_text MUST be natural spoken Hindi in Devanagari only. Use a natural Hindi male narration style; write technical terms in Devanagari pronunciation, while keeping the explanation scientifically precise. Do not use any Latin/English alphabet characters (A-Z or a-z) anywhere in tts_text; write every technical term phonetically in Devanagari.
           caption_text MUST be clean Hinglish/Roman Hindi, short and faithful to tts_text.
@@ -201,6 +204,9 @@ jobs:
                   raise ValueError(f"{label}: response is not a JSON object.")
               if not str(data.get("topic", "")).strip() or not str(data.get("title", "")).strip():
                   raise ValueError(f"{label}: missing topic or title.")
+              allowed_sections = {"Science", "Engineering", "Technology", "Transport", "History", "Architecture", "Space", "General"}
+              section = str(data.get("section", "General")).strip().title()
+              data["section"] = section if section in allowed_sections else "General"
               scenes = data.get("scenes")
               if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
                   raise ValueError(f"{label}: expected 6–9 structured scene objects.")
