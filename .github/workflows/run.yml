@@ -380,6 +380,7 @@ jobs:
       - name: Save submitted topic and Kaggle job record
         env:
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
         run: |
           python - <<'PY'
           import json
@@ -400,6 +401,8 @@ jobs:
 
           job = {
               "kernel": "apuravjadhav/shorts-pipeline-wan",
+              "video_number": os.environ.get("VIDEO_NUMBER", ""),
+              "section": story.get("section", "General"),
               "topic": topic,
               "title": story.get("title", ""),
               "chat_id": os.environ.get("TELEGRAM_CHAT_ID", "").strip(),
