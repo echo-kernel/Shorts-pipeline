@@ -411,10 +411,12 @@ Requirements:
 
 async def create_voice(text, filename, scene_number):
     voice = PRIMARY_TTS_VOICE
-    delays = (3, 8)
+    # Edge TTS can intermittently return NoAudioReceived; use a longer backoff.
+    delays = (5, 15, 30)
     failures = []
 
-    for attempt in range(1, 4):
+    max_attempts = 4
+    for attempt in range(1, max_attempts + 1):
         try:
             if filename.exists():
                 filename.unlink()
@@ -426,7 +428,7 @@ async def create_voice(text, filename, scene_number):
                 pitch=TTS_PITCH,
                 volume="+0%"
             )
-            await asyncio.wait_for(communicate.save(str(filename)), timeout=90)
+            await asyncio.wait_for(communicate.save(str(filename)), timeout=120)
 
             if not filename.exists() or filename.stat().st_size < 500:
                 raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
@@ -443,27 +445,27 @@ async def create_voice(text, filename, scene_number):
                 stderr=subprocess.PIPE,
                 timeout=20
             )
-            print(f"TTS succeeded for scene {scene_number} using {voice} (attempt {attempt}/3).")
+            print(f"TTS succeeded for scene {scene_number} using {voice} (attempt {attempt}/{max_attempts}).")
             return voice
 
         except Exception as exc:
             if filename.exists():
                 filename.unlink()
-            error = f"{voice} attempt {attempt}/3: {type(exc).__name__}: {exc}"
+            error = f"{voice} attempt {attempt}/{max_attempts}: {type(exc).__name__}: {exc}"
             failures.append(error)
             print(f"Edge TTS scene {scene_number} failed: {error}")
-            if attempt < 3:
+            if attempt < max_attempts:
                 wait = delays[attempt - 1]
                 tracker.retries += 1
                 tracker.update(
                     18,
                     "Retrying Andrew Hindi narration",
-                    f"Scene {scene_number}: Andrew attempt {attempt}/3 failed. Retrying in {wait}s."
+                    f"Scene {scene_number}: Andrew attempt {attempt}/{max_attempts} failed. Retrying in {wait}s."
                 )
                 await asyncio.sleep(wait)
 
     raise RuntimeError(
-        f"Andrew multilingual Edge TTS failed for scene {scene_number} after 3 attempts. "
+        f"Andrew multilingual Edge TTS failed for scene {scene_number} after {max_attempts} attempts. "
         "No alternate voice was used. " + " | ".join(failures)
     )
 
@@ -486,6 +488,7 @@ def generate_scene_audio(scenes):
             )
         )
 
+        raw_duration = get_duration(raw)
         run_command([
             "ffmpeg", "-y", "-i", str(raw),
             "-af",
@@ -496,6 +499,28 @@ def generate_scene_audio(scenes):
 
         if not trimmed.exists() or trimmed.stat().st_size < 500:
             raise RuntimeError(f"Scene {index} audio is empty after trimming.")
+
+        trimmed_duration = get_duration(trimmed)
+        # Guard against silence removal accidentally deleting spoken narration.
+        # If over 40% of the raw clip disappears, keep the complete TTS audio.
+        if raw_duration > 0 and trimmed_duration < raw_duration * 0.60:
+            print(
+                f"Scene {index}: silence trimming reduced audio from "
+                f"{raw_duration:.2f}s to {trimmed_duration:.2f}s; "
+                "keeping the untrimmed narration to avoid losing speech."
+            )
+            run_command([
+                "ffmpeg", "-y", "-i", str(raw),
+                "-ar", "48000", "-ac", "2",
+                "-c:a", "libmp3lame", "-q:a", "2", str(trimmed)
+            ])
+            trimmed_duration = get_duration(trimmed)
+
+        if trimmed_duration < 0.8:
+            raise RuntimeError(
+                f"Scene {index} narration is unexpectedly short "
+                f"({trimmed_duration:.2f}s); refusing to continue."
+            )
 
         audio_files.append(trimmed)
         voices_used.append(selected_voice)
