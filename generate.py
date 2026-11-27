@@ -409,16 +409,76 @@ Requirements:
     )
 
 
-async def create_voice(text, filename, voice):
-    communicate = edge_tts.Communicate(
-        text=text,
-        voice=voice,
-        rate=TTS_RATE,
-        pitch=TTS_PITCH,
-        volume="+0%"
-    )
+async def create_voice(text, filename, voice, scene_number):
+    # Edge TTS can occasionally close a request without returning audio.
+    # Retry transient failures instead of aborting the complete video job.
+    delays = (3, 8, 15)
+    last_error = None
 
-    await communicate.save(str(filename))
+    for attempt in range(1, 4):
+        try:
+            if filename.exists():
+                filename.unlink()
+
+            communicate = edge_tts.Communicate(
+                text=text,
+                voice=voice,
+                rate=TTS_RATE,
+                pitch=TTS_PITCH,
+                volume="+0%"
+            )
+
+            await asyncio.wait_for(
+                communicate.save(str(filename)),
+                timeout=90
+            )
+
+            if not filename.exists() or filename.stat().st_size < 500:
+                raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
+
+            # Confirm the downloaded file is a readable audio stream.
+            subprocess.run(
+                [
+                    "ffprobe", "-v", "error",
+                    "-show_entries", "format=duration",
+                    "-of", "default=noprint_wrappers=1:nokey=1",
+                    str(filename)
+                ],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=20
+            )
+
+            print(f"Andrew TTS succeeded for scene {scene_number} (attempt {attempt}/3).")
+            return
+
+        except Exception as exc:
+            last_error = exc
+            if filename.exists():
+                filename.unlink()
+
+            if attempt == 3:
+                break
+
+            wait = delays[attempt - 1]
+            tracker.retries += 1
+            tracker.update(
+                18,
+                "Retrying Hindi narration",
+                f"Scene {scene_number}: Andrew TTS attempt {attempt}/3 failed "
+                f"({type(exc).__name__}). Retrying in {wait}s."
+            )
+            print(
+                f"Edge TTS scene {scene_number} attempt {attempt}/3 failed: "
+                f"{type(exc).__name__}: {exc}. Retrying in {wait}s."
+            )
+            await asyncio.sleep(wait)
+
+    raise RuntimeError(
+        f"Andrew Edge TTS failed for scene {scene_number} after 3 attempts: "
+        f"{type(last_error).__name__}: {last_error}"
+    ) from last_error
 
 
 def generate_scene_audio(scenes):
@@ -428,7 +488,7 @@ def generate_scene_audio(scenes):
     for index, scene in enumerate(scenes, 1):
         raw = voice_dir / f'scene_{index:02d}_raw.mp3'
         trimmed = voice_dir / f'scene_{index:02d}.mp3'
-        asyncio.run(create_voice(scene['tts_text'], raw, PRIMARY_TTS_VOICE))
+        asyncio.run(create_voice(scene['tts_text'], raw, PRIMARY_TTS_VOICE, index))
         run_command(['ffmpeg','-y','-i',str(raw),'-af','silenceremove=start_periods=1:start_duration=0.08:start_threshold=-45dB:stop_periods=-1:stop_duration=0.08:stop_threshold=-45dB','-ar','48000','-ac','2','-c:a','libmp3lame','-q:a','2',str(trimmed)])
         if not trimmed.exists() or trimmed.stat().st_size < 500: raise RuntimeError(f'Scene {index} audio is empty after trimming.')
         audio_files.append(trimmed)
