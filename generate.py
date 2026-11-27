@@ -9,7 +9,8 @@ import subprocess
 from pathlib import Path
 
 import requests
-import edge_tts
+import numpy as np
+import soundfile as sf
 from google import genai
 
 from ai_video import generate_video
@@ -41,9 +42,12 @@ TOPIC = os.getenv(
     "U Tirot Sing and the Khasi resistance against British expansion in 1829"
 )
 
-PRIMARY_TTS_VOICE = "en-US-AndrewMultilingualNeural"
-TTS_RATE = "+10%"
-TTS_PITCH = "-2Hz"
+KOKORO_VOICE = os.getenv("KOKORO_VOICE_ID", "hm_omega").strip()
+KOKORO_VOICES = {"hm_omega", "hm_psi", "hf_alpha", "hf_beta"}
+if KOKORO_VOICE not in KOKORO_VOICES:
+    print(f"Unknown Kokoro voice {KOKORO_VOICE!r}; using hm_omega.")
+    KOKORO_VOICE = "hm_omega"
+_KOKORO_PIPELINE = None
 
 OUTPUT_DIR = Path("output")
 WORK_DIR = OUTPUT_DIR / "work"
@@ -409,64 +413,65 @@ Requirements:
     )
 
 
+def get_kokoro_pipeline():
+    global _KOKORO_PIPELINE
+    if _KOKORO_PIPELINE is None:
+        from kokoro import KPipeline
+        print("Loading Kokoro-82M Hindi pipeline (first run may download model weights)...")
+        _KOKORO_PIPELINE = KPipeline(lang_code="h")
+        print("Kokoro Hindi pipeline is ready.")
+    return _KOKORO_PIPELINE
+
+
 async def create_voice(text, filename, scene_number):
-    voice = PRIMARY_TTS_VOICE
-    # Edge TTS can intermittently return NoAudioReceived; use a longer backoff.
+    voice = KOKORO_VOICE
     delays = (5, 15, 30)
     failures = []
-
-    max_attempts = 4
-    for attempt in range(1, max_attempts + 1):
+    for attempt in range(1, 4):
         try:
             if filename.exists():
                 filename.unlink()
-
-            communicate = edge_tts.Communicate(
-                text=text,
-                voice=voice,
-                rate=TTS_RATE,
-                pitch=TTS_PITCH,
-                volume="+0%"
-            )
-            await asyncio.wait_for(communicate.save(str(filename)), timeout=120)
-
+            pipeline = get_kokoro_pipeline()
+            chunks = []
+            for _, _, audio in pipeline(text, voice=voice, speed=1.0, split_pattern=r"\\n+"):
+                if audio is None:
+                    continue
+                if hasattr(audio, "detach"):
+                    audio = audio.detach().cpu().numpy()
+                else:
+                    audio = np.asarray(audio)
+                if audio.size:
+                    chunks.append(audio.reshape(-1))
+            if not chunks:
+                raise RuntimeError("Kokoro returned no audio chunks.")
+            waveform = np.concatenate(chunks).astype(np.float32, copy=False)
+            if waveform.size < 12000:
+                raise RuntimeError("Kokoro audio is shorter than 0.5 seconds.")
+            sf.write(str(filename), waveform, 24000, subtype="PCM_16")
             if not filename.exists() or filename.stat().st_size < 500:
-                raise RuntimeError("Edge TTS returned an empty or incomplete audio file.")
-
+                raise RuntimeError("Kokoro returned an empty or incomplete WAV file.")
             subprocess.run(
-                [
-                    "ffprobe", "-v", "error",
-                    "-show_entries", "format=duration",
-                    "-of", "default=noprint_wrappers=1:nokey=1",
-                    str(filename)
-                ],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=20
+                ["ffprobe","-v","error","-show_entries","format=duration",
+                 "-of","default=noprint_wrappers=1:nokey=1",str(filename)],
+                check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=20
             )
-            print(f"TTS succeeded for scene {scene_number} using {voice} (attempt {attempt}/{max_attempts}).")
+            print(f"Kokoro TTS succeeded for scene {scene_number} using {voice} (attempt {attempt}/3).")
             return voice
-
         except Exception as exc:
             if filename.exists():
                 filename.unlink()
-            error = f"{voice} attempt {attempt}/{max_attempts}: {type(exc).__name__}: {exc}"
+            error=f"{voice} attempt {attempt}/3: {type(exc).__name__}: {exc}"
             failures.append(error)
-            print(f"Edge TTS scene {scene_number} failed: {error}")
-            if attempt < max_attempts:
-                wait = delays[attempt - 1]
+            print(f"Kokoro TTS scene {scene_number} failed: {error}")
+            if attempt < 3:
+                wait=delays[attempt-1]
                 tracker.retries += 1
-                tracker.update(
-                    18,
-                    "Retrying Andrew Hindi narration",
-                    f"Scene {scene_number}: Andrew attempt {attempt}/{max_attempts} failed. Retrying in {wait}s."
-                )
+                tracker.update(18,"Retrying Kokoro Hindi narration",
+                    f"Scene {scene_number}: {voice} attempt {attempt}/3 failed. Retrying in {wait}s.")
                 await asyncio.sleep(wait)
-
     raise RuntimeError(
-        f"Andrew multilingual Edge TTS failed for scene {scene_number} after {max_attempts} attempts. "
-        "No alternate voice was used. " + " | ".join(failures)
+        f"Kokoro Hindi TTS failed for scene {scene_number} using {voice} after 3 attempts. "
+        "Completed scenes are kept; no other voice is substituted. " + " | ".join(failures)
     )
 
 
@@ -477,7 +482,7 @@ def generate_scene_audio(scenes):
     voice_dir.mkdir(exist_ok=True)
 
     for index, scene in enumerate(scenes, 1):
-        raw = voice_dir / f"scene_{index:02d}_raw.mp3"
+        raw = voice_dir / f"scene_{index:02d}_raw.wav"
         trimmed = voice_dir / f"scene_{index:02d}.mp3"
 
         selected_voice = asyncio.run(
@@ -738,7 +743,7 @@ def main():
 
         tracker.start_stage(
             18,
-            "Generating Hindi narration"
+            "Generating Hindi narration with Kokoro-82M"
         )
 
         voice, audio_files = generate_scene_audio(story["scenes"])
