@@ -471,6 +471,20 @@ jobs:
           print("Attempting to download Kaggle notebook output (including after ERROR).")
           PY
 
+      - name: Update Telegram after Kaggle finishes
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
+          text = "🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle GPU processing finished\n🟡 Downloading and validating the MP4\n⚪ Saving the finished video\n⚪ Starting YouTube upload"
+          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          urllib.request.urlopen(req, timeout=20).read()
+          PY
+
       - name: Download completed video from Kaggle
         env:
           KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
@@ -521,6 +535,20 @@ jobs:
           git push
           echo "Video committed to the repository."
 
+      - name: Update Telegram after video is saved
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token, chat, mid = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID'], int(os.environ['PROGRESS_MESSAGE_ID'])
+          text = "🎬 AI VIDEO PROCESS\n\n✅ Story generated and checked\n✅ Kaggle rendering finished\n✅ Final MP4 downloaded and saved to the repository\n🟡 Starting YouTube upload\n\nThe YouTube workflow will send its result separately."
+          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':mid,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          urllib.request.urlopen(req, timeout=20).read()
+          PY
+
       - name: Start YouTube upload workflow
         env:
           VIDEO_GITHUB_TOKEN: ${{ secrets.VIDEO_GITHUB_TOKEN }}
@@ -555,6 +583,23 @@ jobs:
               if response.status not in (201, 204):
                   raise SystemExit("Could not dispatch YouTube workflow: HTTP " + str(response.status))
           print("YouTube upload workflow dispatched.")
+          PY
+
+      - name: Mark Telegram progress as failed
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
+          PROGRESS_MESSAGE_ID: ${{ steps.progress_start.outputs.message_id }}
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request
+          token, chat, mid = os.getenv('TELEGRAM_BOT_TOKEN'), os.getenv('TELEGRAM_CHAT_ID'), os.getenv('PROGRESS_MESSAGE_ID')
+          if token and chat and mid:
+              text = '❌ AI VIDEO PROCESS FAILED\n\nA pipeline step failed. Open GitHub Actions for the exact error. Kaggle logs are checked by the workflow when available.'
+              req = urllib.request.Request(f'https://api.telegram.org/bot{token}/editMessageText', data=json.dumps({'chat_id':chat,'message_id':int(mid),'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+              try: urllib.request.urlopen(req, timeout=20).read()
+              except Exception as exc: print('Telegram failure update warning:', type(exc).__name__, str(exc)[:160])
           PY
 
       - name: Notify Telegram if submission workflow fails
