@@ -756,7 +756,7 @@ async function dispatchWorkflowRepair(env, chatId, videoNumber) {
   return telegram(env, "sendMessage", {
     chat_id: chatId,
     text: "🛠 WORKFLOW REPAIR STARTED — VIDEO #" + videoNumber +
-      "\n\nI will search failed runs on branch jee-telegram-quiz for the exact log marker Reserved Video #" + videoNumber + ". I will not select or retry a different video's run. If there is no exact match, I will stop and report that.\n\nThis diagnoses the failed workflow; it does not recreate a missing MP4 or generate a new video."
+      "\n\nI will find the exact failed run for VIDEO #" + videoNumber + ". If it matches a known pipeline bug that has been fixed, I will rebuild the same video number using its original topic. I will never retry a different video's run. If the exact run or topic cannot be confirmed, I will stop and report that."
   });
 }
 
