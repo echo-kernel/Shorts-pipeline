@@ -53,13 +53,20 @@ story_payload = globals().get("VIDEO_STORY_JSON", "")
 if not story_payload:
     raise RuntimeError("Missing story payload from GitHub Actions.")
 os.environ["VIDEO_STORY_JSON"] = story_payload
+voice_id = globals().get("KOKORO_VOICE_ID", "hm_omega")
+if voice_id not in {"hm_omega", "hm_psi", "hf_alpha", "hf_beta"}:
+    print("Invalid injected Kokoro voice; defaulting to hm_omega.")
+    voice_id = "hm_omega"
+os.environ["KOKORO_VOICE_ID"] = voice_id
+print("Selected Kokoro Hindi voice:", voice_id)
 
 # 3. Install dependencies without replacing Kaggle's Torch
 subprocess.run([
     sys.executable, "-m", "pip", "install", "-q",
     "diffusers==0.43.0",
     "accelerate",
-    "edge-tts",
+    "kokoro>=0.9.4",
+    "soundfile",
     "requests",
     "geopandas",
     "contextily",
@@ -69,9 +76,10 @@ subprocess.run([
     "numpy"
 ], check=True)
 
-# Update only the Edge TTS client; keep Kaggle Torch and the pinned video stack unchanged.
+# Install the Kokoro phonemizer runtime without replacing Kaggle's Torch.
 subprocess.run([
-    sys.executable, "-m", "pip", "install", "-q", "--upgrade", "edge-tts"
+    "bash", "-lc",
+    "if ! command -v espeak-ng >/dev/null 2>&1; then apt-get update -qq && apt-get install -y -qq espeak-ng; fi"
 ], check=True)
 
 # 4. Check GPU
