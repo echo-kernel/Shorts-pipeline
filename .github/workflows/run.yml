@@ -314,10 +314,19 @@ jobs:
                   except Exception as exc:
                       failures.append(f"{model}: {type(exc).__name__}: {exc}")
                       print(f"{model} failed: {type(exc).__name__}: {exc}")
+                      message = str(exc).lower()
+                      quota_exhausted = (
+                          "resource_exhausted" in message
+                          or "requests per day limit exceeded" in message
+                          or "quota exceeded" in message
+                      )
+                      if quota_exhausted:
+                          print(f"{model} daily free-tier quota is exhausted; skipping retries for this model and trying the next fallback.")
+                          break
                       if attempt < 2:
                           if is_transient_error(exc):
                               delay = 20 * (2 ** attempt)
-                              print(f"Transient Gemini service/rate-limit error. Retrying {model} in {delay}s.")
+                              print(f"Temporary Gemini service/rate-limit error. Retrying {model} in {delay}s.")
                           else:
                               delay = 5 * (2 ** attempt)
                               print(f"Invalid JSON/schema/language. Retrying {model} with stricter instructions in {delay}s.")
@@ -446,19 +455,28 @@ jobs:
           else:
               subprocess.run(["git", "commit", "-m", "Record submitted Kaggle explainer job"], check=True)
               branch = os.environ.get("GITHUB_REF_NAME", "jee-telegram-quiz")
+              # Keep runtime story.json and other generated files out of the rebase.
+              stash = subprocess.run(["git", "stash", "push", "--include-untracked", "-m", "preserve-runtime-files-before-job-record-push"])
+              if stash.returncode != 0:
+                  raise SystemExit("Could not safely stash runtime files before syncing the job record.")
               pushed = False
-              for attempt in range(5):
-                  subprocess.run(["git", "fetch", "origin", branch], check=True)
-                  rebase = subprocess.run(["git", "rebase", "origin/" + branch])
-                  if rebase.returncode != 0:
-                      subprocess.run(["git", "rebase", "--abort"])
-                      raise SystemExit("Could not rebase the Kaggle job record onto the latest branch.")
-                  push = subprocess.run(["git", "push"])
-                  if push.returncode == 0:
-                      pushed = True
-                      break
-              if not pushed:
-                  raise SystemExit("Could not push Kaggle job record after 5 attempts.")
+              try:
+                  for attempt in range(5):
+                      subprocess.run(["git", "fetch", "origin", branch], check=True)
+                      rebase = subprocess.run(["git", "rebase", "origin/" + branch])
+                      if rebase.returncode != 0:
+                          subprocess.run(["git", "rebase", "--abort"])
+                          raise SystemExit("Could not rebase the Kaggle job record onto the latest branch.")
+                      push = subprocess.run(["git", "push"])
+                      if push.returncode == 0:
+                          pushed = True
+                          break
+                  if not pushed:
+                      raise SystemExit("Could not push Kaggle job record after 5 attempts.")
+              finally:
+                  restore = subprocess.run(["git", "stash", "pop"])
+                  if restore.returncode != 0:
+                      print("WARNING: runtime-file stash could not be cleanly restored; inspect git status.")
               print(f"Recorded submitted Kaggle job for: {topic}")
           PY
 
