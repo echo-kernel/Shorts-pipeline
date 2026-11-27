@@ -251,7 +251,32 @@ jobs:
           issue_url = None
           retry_message = ""
 
-          if category == "transient" and transient and attempt < 2:
+          if manual_video and concat_list_bug:
+              # The known audio-manifest bug is fixed on the branch. Rebuild the same
+              # numbered video using its original requested topic; never rerun the old SHA.
+              topic_match = re.search(r"VIDEO_TOPIC:\\s*([^\\r\\n]+)", logs)
+              if not topic_match:
+                  retry_message = "The audio-manifest bug is fixed, but the original topic could not be recovered safely. No rebuild was dispatched."
+              else:
+                  original_topic = topic_match.group(1).strip()
+                  dispatch = requests.post(
+                      f"{api}/actions/workflows/run.yml/dispatches",
+                      headers=headers,
+                      json={
+                          "ref": branch,
+                          "inputs": {
+                              "topic": original_topic,
+                              "video_number": manual_video
+                          }
+                      },
+                      timeout=25
+                  )
+                  if dispatch.status_code == 204:
+                      retry_message = "Rebuild dispatched for VIDEO #" + manual_video + " using the original topic: " + original_topic
+                  else:
+                      retry_message = f"Corrected rebuild dispatch failed: HTTP {dispatch.status_code} {dispatch.text[:300]}"
+
+          elif category == "transient" and transient and attempt < 2:
               rr = requests.post(f"{api}/actions/runs/{run_id}/rerun-failed-jobs", headers=headers, timeout=25)
               if rr.status_code in (201, 202, 204):
                   retry_message = "GitHub accepted one retry of the failed job."
