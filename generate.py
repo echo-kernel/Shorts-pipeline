@@ -532,7 +532,7 @@ def generate_scene_audio(scenes):
 
     concat = WORK_DIR / "voice_concat.txt"
     concat.write_text(
-        "".join("file '" + str(path.resolve()) + "'\\n" for path in audio_files),
+        "".join("file '" + str(path.resolve()) + "'\n" for path in audio_files),
         encoding="utf-8"
     )
 
@@ -543,7 +543,7 @@ def generate_scene_audio(scenes):
     ])
 
     (OUTPUT_DIR / "voice_used.txt").write_text(
-        "".join(f"Scene {i}: {voice_name}\\n" for i, voice_name in enumerate(voices_used, 1)),
+        "".join(f"Scene {i}: {voice_name}\n" for i, voice_name in enumerate(voices_used, 1)),
         encoding="utf-8"
     )
     print("VOICE_USED_BY_SCENE=" + ", ".join(voices_used))
