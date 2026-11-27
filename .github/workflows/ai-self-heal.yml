@@ -122,7 +122,6 @@ jobs:
                   json={
                       "title": f"AI diagnosis: Shorts pipeline run {run_id} failed",
                       "body": summary + "\n\n### Recent failure logs\n~~~text\n" + logs[-12000:] + "\n~~~",
-                      "labels": ["bug"]
                   },
                   timeout=25
               )
