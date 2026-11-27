@@ -154,7 +154,7 @@ jobs:
               scenes = data.get("scenes")
               if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
                   raise ValueError(f"{label}: expected 6–9 structured scene objects.")
-              devanagari = re.compile(r"[\\u0900-\\u097F]")
+              devanagari = re.compile(r"[\u0900-\u097F]")
               latin = re.compile(r"[A-Za-z]")
               for i, scene in enumerate(scenes, 1):
                   if not isinstance(scene, dict):
