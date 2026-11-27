@@ -174,7 +174,7 @@ jobs:
                   r.raise_for_status()
                   raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                   ai = json.loads(raw)
-                  if ai.get("category") in {
+                  if (not missing_mp4) and ai.get("category") in {
                       "transient", "code_bug", "dependency", "configuration",
                       "missing_secret", "permission", "unknown"
                   }:
