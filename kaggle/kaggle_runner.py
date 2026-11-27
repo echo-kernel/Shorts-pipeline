@@ -76,16 +76,40 @@ subprocess.run([
     "numpy"
 ], check=True)
 
-# Kaggle's current image uses Python 3.13. PyPI's Kokoro 0.9.4 and
-# Misaki 0.9.4 wheels declare Python <3.13 even though the upstream
-# project reports successful Python 3.13 install/import tests when that
-# metadata gate is bypassed. Pin both versions and bypass ONLY this
-# Python metadata check; do not apply the bypass to the rest of the stack.
+# Kaggle currently uses Python 3.13. Kokoro 0.9.4 declares Python <3.13
+# and its "misaki[en]" extra pulls spacy-curated-transformers. That extra
+# transitively requires curated-tokenizers, which has no compatible cp313
+# wheel and fails to build on Kaggle. The curated transformer package is not
+# imported by Misaki's English G2P path, so install Kokoro/Misaki without
+# dependency resolution, then install the runtime dependencies explicitly.
+#
+# Install spaCy from a wheel only: never attempt a source build on Kaggle.
 subprocess.run([
     sys.executable, "-m", "pip", "install", "-q",
-    "--ignore-requires-python",
+    "--only-binary=:all:",
+    "spacy>=3.8.7"
+], check=True)
+
+subprocess.run([
+    sys.executable, "-m", "pip", "install", "-q",
+    "--ignore-requires-python", "--no-deps",
     "kokoro==0.9.4",
     "misaki==0.9.4"
+], check=True)
+
+# Do not reinstall/replace Kaggle's preinstalled CUDA-enabled Torch.
+subprocess.run([
+    sys.executable, "-m", "pip", "install", "-q",
+    "huggingface_hub",
+    "loguru",
+    "numpy",
+    "transformers",
+    "num2words",
+    "addict",
+    "regex",
+    "attr>=0.3.2",
+    "phonemizer-fork",
+    "espeakng-loader"
 ], check=True)
 
 # Install the Kokoro phonemizer runtime without replacing Kaggle's Torch.
