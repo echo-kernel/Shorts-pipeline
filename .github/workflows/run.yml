@@ -135,54 +135,106 @@ jobs:
               )
               return any(marker in message or marker == status for marker in transient_markers)
 
+          import re
+
+          def parse_json_response(response_text):
+              if not response_text or not response_text.strip():
+                  raise ValueError("Gemini returned an empty response.")
+              cleaned = response_text.strip()
+              if cleaned.startswith("```"):
+                  cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+                  cleaned = re.sub(r"\s*```$", "", cleaned)
+              return json.loads(cleaned)
+
+          def validate_story(data, label):
+              if not isinstance(data, dict):
+                  raise ValueError(f"{label}: response is not a JSON object.")
+              if not str(data.get("topic", "")).strip() or not str(data.get("title", "")).strip():
+                  raise ValueError(f"{label}: missing topic or title.")
+              scenes = data.get("scenes")
+              if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
+                  raise ValueError(f"{label}: expected 6–9 structured scene objects.")
+              devanagari = re.compile(r"[\\u0900-\\u097F]")
+              latin = re.compile(r"[A-Za-z]")
+              for i, scene in enumerate(scenes, 1):
+                  if not isinstance(scene, dict):
+                      raise ValueError(f"{label}: scene {i} must be an object.")
+                  for key in ("mode", "visual_prompt", "tts_text", "caption_text"):
+                      if not isinstance(scene.get(key), str) or not scene[key].strip():
+                          raise ValueError(f"{label}: scene {i} missing {key}.")
+                  if scene["mode"] not in ("render", "map"):
+                      raise ValueError(f"{label}: scene {i} has invalid mode.")
+                  if latin.search(scene["tts_text"]) or not devanagari.search(scene["tts_text"]):
+                      raise ValueError(f"{label}: scene {i} narration must be Hindi in Devanagari only.")
+                  if devanagari.search(scene["caption_text"]):
+                      raise ValueError(f"{label}: scene {i} caption must be Roman Hinglish.")
+                  if scene["mode"] == "map":
+                      center = scene.get("map_center")
+                      if not isinstance(center, list) or len(center) != 2:
+                          raise ValueError(f"{label}: map scene {i} requires [latitude, longitude].")
+              data["voiceover"] = " ".join(scene["tts_text"].strip() for scene in scenes)
+              return data
+
           for model in models:
               for attempt in range(3):
                   try:
                       print(f"Generating story with {model} (attempt {attempt + 1}/3)")
-                      attempt_prompt = prompt if attempt == 0 else (prompt + "\\nIMPORTANT: Your previous response failed JSON/schema/language validation. Return valid JSON only, with 6–9 scenes and tts_text containing Devanagari characters exclusively; no Latin letters at all. Keep technical terms in Devanagari phonetic spelling.")
+                      attempt_prompt = prompt
+                      if attempt:
+                          attempt_prompt += (
+                              "\nYour previous output failed validation. Return a single valid JSON object. "
+                              "Include exactly 7 scene objects. Use only Devanagari characters in every tts_text; "
+                              "spell all technical terms phonetically in Hindi. caption_text must use Roman Hinglish."
+                          )
                       response = client.models.generate_content(
                           model=model,
                           contents=attempt_prompt,
                           config={"response_mime_type": "application/json"}
                       )
-                      data = json.loads(response.text.strip())
+                      draft = validate_story(
+                          parse_json_response(response.text),
+                          "Initial Gemini draft"
+                      )
+                      print(f"Initial story passed schema and language validation with {model}.")
+
+                      # Audit is an enhancement, not a gate that can discard a valid story.
                       audit_prompt = (
-                          "Fact-check science, engineering, history and geography. Verify every scene visual actually illustrates its narration, that machine parts are arranged correctly, that connected scenes retain one identical model design, and that the output is polished 3D cartoon animation rather than photorealistic CGI. Preserve keys topic,title,voiceover,scenes "
-                          "and each scene object keys mode,visual_prompt,tts_text,caption_text,map_center,map_zoom,route_points. "
-                          "Keep tts_text exclusively in Devanagari Hindi with absolutely no Latin letters; transliterate every technical term into Devanagari. Keep caption_text in Roman Hinglish. Use map only for explicit geographic scenes. " +
-                          "Correct inaccurate claims, physical mechanisms, scene-to-narration mismatches, machine construction, scene continuity, cartoon style consistency and map coordinates. Remove generic or unrelated visuals. Return corrected JSON only. Draft: "
-                          + json.dumps(data, ensure_ascii=False)
+                          "Review this educational script for factual and engineering accuracy, "
+                          "scene-to-narration alignment, continuity and consistent polished 3D cartoon style. "
+                          "Correct only genuine errors. Preserve the exact number of scenes and all required keys. "
+                          "Keep every tts_text exclusively in Devanagari Hindi with no Latin letters; keep every "
+                          "caption_text in Roman Hinglish. Return one valid JSON object only. Draft: "
+                          + json.dumps(draft, ensure_ascii=False)
                       )
-                      audited = client.models.generate_content(
-                          model=model,
-                          contents=audit_prompt,
-                          config={"response_mime_type": "application/json"}
-                      )
-                      data = json.loads(audited.text.strip())
-                      print("Independent science/physics audit completed.")
-                      if not isinstance(data, dict):
-                          raise ValueError("Response is not a JSON object.")
-                      if not data.get("topic") or not data.get("title"):
-                          raise ValueError("Missing topic or title.")
-                      scenes = data.get("scenes")
-                      if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
-                          raise ValueError("Expected 6–9 structured scene objects.")
-                      import re
-                      for i, scene in enumerate(scenes, 1):
-                          if not isinstance(scene, dict): raise ValueError(f"Scene {i} must be an object.")
-                          for key in ("mode", "visual_prompt", "tts_text", "caption_text"):
-                              if not isinstance(scene.get(key), str) or not scene[key].strip(): raise ValueError(f"Scene {i} missing {key}.")
-                          if scene["mode"] not in ("render", "map"): raise ValueError(f"Scene {i} invalid mode.")
-                          if re.search(r"[A-Za-z]", scene["tts_text"]) or not re.search(r"[\\u0900-\\u097F]", scene["tts_text"]): raise ValueError(f"Scene {i} tts_text must be Hindi in Devanagari script only.")
-                          if re.search(r"[\\u0900-\\u097F]", scene["caption_text"]): raise ValueError(f"Scene {i} caption_text must be Roman Hinglish, not Devanagari.")
-                          if scene["mode"] == "map" and not isinstance(scene.get("map_center"), list): raise ValueError(f"Map scene {i} requires map_center.")
+                      try:
+                          audited_response = client.models.generate_content(
+                              model=model,
+                              contents=audit_prompt,
+                              config={"response_mime_type": "application/json"}
+                          )
+                          audited = validate_story(
+                              parse_json_response(audited_response.text),
+                              "Science-audited story"
+                          )
+                          if len(audited["scenes"]) != len(draft["scenes"]):
+                              raise ValueError("Audit changed the scene count.")
+                          data = audited
+                          print("Independent science/physics audit passed validation.")
+                      except Exception as audit_error:
+                          data = draft
+                          print(
+                              "Science audit output was unusable; retaining the validated original draft. "
+                              f"Reason: {type(audit_error).__name__}: {audit_error}"
+                          )
+
                       data["gemini_model"] = model
                       Path("kaggle/story.json").write_text(
                           json.dumps(data, ensure_ascii=False, separators=(",", ":")),
                           encoding="utf-8"
                       )
-                      print(f"Story generated successfully with {model}.")
+                      print(f"Story generated successfully with {model}; proceeding to Kaggle.")
                       raise SystemExit(0)
+
                   except SystemExit:
                       raise
                   except Exception as exc:
@@ -194,15 +246,12 @@ jobs:
                               print(f"Transient Gemini service/rate-limit error. Retrying {model} in {delay}s.")
                           else:
                               delay = 5 * (2 ** attempt)
-                              print(f"Invalid JSON/schema/language or other model response error. Retrying {model} with stricter instructions in {delay}s.")
+                              print(f"Invalid JSON/schema/language. Retrying {model} with stricter instructions in {delay}s.")
                           time.sleep(delay)
                           continue
-                      if is_transient_error(exc):
-                          print(f"{model} remained temporarily unavailable after 3 attempts; moving to the next fallback model.")
-                      else:
-                          print(f"{model} failed validation after 3 attempts; moving to the next fallback model.")
+                      print(f"{model} exhausted 3 attempts; moving to the next fallback model.")
 
-          raise SystemExit("All Gemini models failed:\n" + "\n".join(failures[-6:]))
+          raise SystemExit("All configured Gemini models failed initial story validation:\n" + "\n".join(failures[-6:]))
           PY
 
       - name: Inject story into the private Kaggle kernel source
