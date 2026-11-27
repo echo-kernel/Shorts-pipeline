@@ -91,7 +91,21 @@ jobs:
           subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
           subprocess.run(['git','add',str(path)], check=True)
           subprocess.run(['git','commit','-m','Reserve video number ' + str(number)], check=True)
-          subprocess.run(['git','push'], check=True)
+          # Rebase our counter commit if code or documentation was pushed after checkout.
+          branch = os.environ.get('GITHUB_REF_NAME', 'jee-telegram-quiz')
+          pushed = False
+          for attempt in range(5):
+              subprocess.run(['git','fetch','origin',branch], check=True)
+              rebase = subprocess.run(['git','rebase','origin/' + branch])
+              if rebase.returncode != 0:
+                  subprocess.run(['git','rebase','--abort'])
+                  raise SystemExit('Could not rebase video-number reservation onto the latest branch.')
+              push = subprocess.run(['git','push'])
+              if push.returncode == 0:
+                  pushed = True
+                  break
+          if not pushed:
+              raise SystemExit('Could not push video-number reservation after 5 attempts.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write('number=' + str(number).zfill(4) + chr(10))
           print('Reserved Video #' + str(number).zfill(4))
@@ -104,13 +118,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
           VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
+          TRACK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python - <<'PY'
           import json, os, urllib.request
           token, chat = os.environ['TELEGRAM_BOT_TOKEN'], os.environ['TELEGRAM_CHAT_ID']
           number = os.environ['VIDEO_NUMBER']
-          text = '🎬 VIDEO #' + number + '\nSection: Classifying topic…\n\n🟡 Request accepted\n⚪ Writing and checking story\n⚪ Preparing Kaggle GPU job\n⚪ Rendering scenes and Hindi narration\n⚪ Editing final video\n\nRequested topic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:300]
-          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/sendMessage', data=json.dumps({'chat_id':chat,'text':text}).encode(), headers={'Content-Type':'application/json'}, method='POST')
+          text = '🎬 VIDEO #' + number + '\\nSection: Classifying topic…\\n\\n🟡 Request accepted\\n⚪ Writing and checking story\\n⚪ Preparing Kaggle GPU job\\n⚪ Rendering scenes and Hindi narration\\n⚪ Editing final video\\n\\nRequested topic: ' + os.environ.get('VIDEO_TOPIC', 'AUTO')[:300]
+          markup = {'inline_keyboard': [[{'text': '📊 Track Video Progress', 'url': os.environ['TRACK_URL']}]]}
+          payload = {'chat_id': chat, 'text': text, 'reply_markup': markup}
+          req = urllib.request.Request(f'https://api.telegram.org/bot{token}/sendMessage', data=json.dumps(payload).encode(), headers={'Content-Type':'application/json'}, method='POST')
           with urllib.request.urlopen(req, timeout=20) as r: data = json.loads(r.read().decode())
           if not data.get('ok'): raise SystemExit('Could not create Telegram progress message')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out: out.write('message_id=' + str(data['result']['message_id']) + '\n')
@@ -420,7 +437,20 @@ jobs:
               print("Topic and job record already saved.")
           else:
               subprocess.run(["git", "commit", "-m", "Record submitted Kaggle explainer job"], check=True)
-              subprocess.run(["git", "push"], check=True)
+              branch = os.environ.get("GITHUB_REF_NAME", "jee-telegram-quiz")
+              pushed = False
+              for attempt in range(5):
+                  subprocess.run(["git", "fetch", "origin", branch], check=True)
+                  rebase = subprocess.run(["git", "rebase", "origin/" + branch])
+                  if rebase.returncode != 0:
+                      subprocess.run(["git", "rebase", "--abort"])
+                      raise SystemExit("Could not rebase the Kaggle job record onto the latest branch.")
+                  push = subprocess.run(["git", "push"])
+                  if push.returncode == 0:
+                      pushed = True
+                      break
+              if not pushed:
+                  raise SystemExit("Could not push Kaggle job record after 5 attempts.")
               print(f"Recorded submitted Kaggle job for: {topic}")
           PY
 
@@ -593,7 +623,20 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add videos/*.mp4
           git commit -m "Add completed Kaggle educational Short"
-          git push
+          pushed=false
+          for attempt in 1 2 3 4 5; do
+            git fetch origin "$GITHUB_REF_NAME"
+            if ! git rebase "origin/$GITHUB_REF_NAME"; then
+              git rebase --abort || true
+              echo "Could not rebase the finished video commit onto the latest branch."
+              exit 1
+            fi
+            if git push; then pushed=true; break; fi
+          done
+          if [ "$pushed" != true ]; then
+            echo "Could not push the finished video after 5 attempts."
+            exit 1
+          fi
           echo "Video committed to the repository."
 
       - name: Update Telegram after video is saved
