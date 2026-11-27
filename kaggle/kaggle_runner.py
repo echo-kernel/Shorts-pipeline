@@ -60,12 +60,12 @@ if voice_id not in {"hm_omega", "hm_psi", "hf_alpha", "hf_beta"}:
 os.environ["KOKORO_VOICE_ID"] = voice_id
 print("Selected Kokoro Hindi voice:", voice_id)
 
-# 3. Install dependencies without replacing Kaggle's Torch
+# 3. Install dependencies without replacing Kaggle's preinstalled Torch.
+print("Python runtime:", sys.version)
 subprocess.run([
     sys.executable, "-m", "pip", "install", "-q",
     "diffusers==0.43.0",
     "accelerate",
-    "kokoro>=0.9.4",
     "soundfile",
     "requests",
     "geopandas",
@@ -76,11 +76,27 @@ subprocess.run([
     "numpy"
 ], check=True)
 
+# Kaggle's current image uses Python 3.13. PyPI's Kokoro 0.9.4 and
+# Misaki 0.9.4 wheels declare Python <3.13 even though the upstream
+# project reports successful Python 3.13 install/import tests when that
+# metadata gate is bypassed. Pin both versions and bypass ONLY this
+# Python metadata check; do not apply the bypass to the rest of the stack.
+subprocess.run([
+    sys.executable, "-m", "pip", "install", "-q",
+    "--ignore-requires-python",
+    "kokoro==0.9.4",
+    "misaki==0.9.4"
+], check=True)
+
 # Install the Kokoro phonemizer runtime without replacing Kaggle's Torch.
 subprocess.run([
     "bash", "-lc",
     "if ! command -v espeak-ng >/dev/null 2>&1; then apt-get update -qq && apt-get install -y -qq espeak-ng; fi"
 ], check=True)
+
+# Verify Kokoro imports before spending time on GPU video generation.
+from kokoro import KPipeline
+print("Kokoro KPipeline import: OK")
 
 # 4. Check GPU
 import torch
