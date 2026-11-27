@@ -59,7 +59,6 @@ subprocess.run([
     sys.executable, "-m", "pip", "install", "-q",
     "diffusers==0.43.0",
     "accelerate",
-    "--upgrade",
     "edge-tts",
     "requests",
     "geopandas",
@@ -68,6 +67,11 @@ subprocess.run([
     "shapely",
     "pyproj",
     "numpy"
+], check=True)
+
+# Update only the Edge TTS client; keep Kaggle Torch and the pinned video stack unchanged.
+subprocess.run([
+    sys.executable, "-m", "pip", "install", "-q", "--upgrade", "edge-tts"
 ], check=True)
 
 # 4. Check GPU
