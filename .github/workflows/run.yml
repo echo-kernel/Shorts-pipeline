@@ -28,6 +28,11 @@ on:
           - hf_alpha
           - hf_beta
         default: hm_omega
+      video_number:
+        description: "Optional existing video number to rebuild after /fix"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: write
@@ -78,37 +83,48 @@ jobs:
         id: video_identity
         run: |
           python - <<'PY'
-          import json, os, subprocess
+          import json, os, re, subprocess
           from pathlib import Path
           path = Path('video_counter.json')
           try:
               data = json.loads(path.read_text(encoding='utf-8'))
           except Exception:
               data = {'last_number': 0}
-          number = int(data.get('last_number', 0)) + 1
-          path.write_text(json.dumps({'last_number': number}, indent=2) + chr(10), encoding='utf-8')
-          subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
-          subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
-          subprocess.run(['git','add',str(path)], check=True)
-          subprocess.run(['git','commit','-m','Reserve video number ' + str(number)], check=True)
-          # Rebase our counter commit if code or documentation was pushed after checkout.
-          branch = os.environ.get('GITHUB_REF_NAME', 'jee-telegram-quiz')
-          pushed = False
-          for attempt in range(5):
-              subprocess.run(['git','fetch','origin',branch], check=True)
-              rebase = subprocess.run(['git','rebase','origin/' + branch])
-              if rebase.returncode != 0:
-                  subprocess.run(['git','rebase','--abort'])
-                  raise SystemExit('Could not rebase video-number reservation onto the latest branch.')
-              push = subprocess.run(['git','push'])
-              if push.returncode == 0:
-                  pushed = True
-                  break
-          if not pushed:
-              raise SystemExit('Could not push video-number reservation after 5 attempts.')
+          last_number = int(data.get('last_number', 0))
+          requested = os.environ.get('REQUESTED_VIDEO_NUMBER', '').strip()
+          if requested:
+              if not re.fullmatch(r'\\d{4}', requested):
+                  raise SystemExit('Requested video_number must be exactly four digits.')
+              number = int(requested)
+              next_last_number = max(last_number, number)
+              print('Rebuilding existing video number #' + requested)
+          else:
+              number = last_number + 1
+              next_last_number = number
+          # Only commit/push when the counter actually needs advancing.
+          if next_last_number != last_number:
+              path.write_text(json.dumps({'last_number': next_last_number}, indent=2) + chr(10), encoding='utf-8')
+              subprocess.run(['git','config','user.name','github-actions[bot]'], check=True)
+              subprocess.run(['git','config','user.email','41898282+github-actions[bot]@users.noreply.github.com'], check=True)
+              subprocess.run(['git','add',str(path)], check=True)
+              subprocess.run(['git','commit','-m','Reserve video number ' + str(next_last_number)], check=True)
+              branch = os.environ.get('GITHUB_REF_NAME', 'jee-telegram-quiz')
+              pushed = False
+              for attempt in range(5):
+                  subprocess.run(['git','fetch','origin',branch], check=True)
+                  rebase = subprocess.run(['git','rebase','origin/' + branch])
+                  if rebase.returncode != 0:
+                      subprocess.run(['git','rebase','--abort'])
+                      raise SystemExit('Could not rebase video-number reservation onto the latest branch.')
+                  push = subprocess.run(['git','push'])
+                  if push.returncode == 0:
+                      pushed = True
+                      break
+              if not pushed:
+                  raise SystemExit('Could not push video-number reservation after 5 attempts.')
           with open(os.environ['GITHUB_OUTPUT'], 'a') as out:
               out.write('number=' + str(number).zfill(4) + chr(10))
-          print('Reserved Video #' + str(number).zfill(4))
+          print(('Rebuilding' if requested else 'Reserved') + ' Video #' + str(number).zfill(4))
           PY
 
       - name: Start Telegram progress message
@@ -118,6 +134,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ inputs.chat_id || secrets.TELEGRAM_CHAT_ID }}
           VIDEO_TOPIC: ${{ inputs.topic || 'AUTO' }}
           VIDEO_NUMBER: ${{ steps.video_identity.outputs.number }}
+          REQUESTED_VIDEO_NUMBER: ${{ inputs.video_number || '' }}
           TRACK_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           python - <<'PY'
