@@ -74,16 +74,53 @@ jobs:
           }
           api = "https://api.github.com/repos/" + repo
           if not run_id_raw:
-              candidates = requests.get(api + "/actions/workflows/run.yml/runs", params={"branch": branch, "status": "failure", "per_page": 20}, headers=headers, timeout=25)
-              candidates.raise_for_status()
-              runs = candidates.json().get("workflow_runs", [])
-              if not runs:
-                  print("No failed AI Explainer Shorts Pipeline run found for video #" + manual_video + " on branch " + branch + ". No new video was generated.")
+              # GitHub's workflow-runs API accepts status=completed, not status=failure.
+              # Find the exact run by its unique video allocation log marker; never fall
+              # back to "the latest failed run", which could belong to another video.
+              if not re.fullmatch(r"\\d{4}", manual_video):
+                  print("Invalid video number; expected four digits. No run was selected.")
                   sys.exit(0)
-              selected = runs[0]
+              candidates = requests.get(
+                  api + "/actions/workflows/run.yml/runs",
+                  params={"branch": branch, "status": "completed", "per_page": 100},
+                  headers=headers, timeout=25
+              )
+              candidates.raise_for_status()
+              runs = [
+                  item for item in candidates.json().get("workflow_runs", [])
+                  if item.get("conclusion") == "failure"
+              ]
+              marker = "Reserved Video #" + manual_video
+              matches = []
+              for candidate in runs:
+                  candidate_jobs = requests.get(
+                      f"{api}/actions/runs/{candidate['id']}/jobs",
+                      headers=headers, timeout=25
+                  )
+                  candidate_jobs.raise_for_status()
+                  jobs = candidate_jobs.json().get("jobs", [])
+                  for job in jobs:
+                      if job.get("conclusion") != "failure":
+                          continue
+                      # Download each failed job's logs and require the exact reservation marker.
+                      log_response = requests.get(
+                          f"{api}/actions/jobs/{job['id']}/logs",
+                          headers=headers, timeout=35
+                      )
+                      if log_response.ok and marker in log_response.text:
+                          matches.append(candidate)
+                          break
+                  if matches and matches[-1]["id"] == candidate["id"]:
+                      break
+              if len(matches) != 1:
+                  reason = "No exact failed run matched" if not matches else "More than one failed run matched"
+                  print(reason + " video #" + manual_video + " on branch " + branch + ". No run was retried or modified.")
+                  sys.exit(0)
+              selected = matches[0]
               run_id = int(selected["id"])
               run_url = selected.get("html_url", "")
               attempt = int(selected.get("run_attempt", 1))
+              print("Exact video match: #" + manual_video + " -> run " + str(run_id))
           else:
               run_id = int(run_id_raw)
 
