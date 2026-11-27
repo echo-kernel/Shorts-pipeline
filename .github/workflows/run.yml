@@ -653,6 +653,19 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add videos/*.mp4
           git commit -m "Add completed Kaggle educational Short"
+          # Kaggle downloads and story files remain in the worktree; stash them
+          # so they cannot block the rebase of the committed MP4.
+          old_stash="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
+          git stash push --include-untracked -m "preserve-video-runtime-files-before-push"
+          new_stash="$(git rev-parse -q --verify refs/stash 2>/dev/null || true)"
+          created_stash=false
+          if [ -n "$new_stash" ] && [ "$new_stash" != "$old_stash" ]; then created_stash=true; fi
+          restore_runtime_files() {
+            if [ "$created_stash" = true ]; then
+              git stash pop || echo "WARNING: runtime files need manual restoration from the Git stash."
+            fi
+          }
+          trap restore_runtime_files EXIT
           pushed=false
           for attempt in 1 2 3 4 5; do
             git fetch origin "$GITHUB_REF_NAME"
