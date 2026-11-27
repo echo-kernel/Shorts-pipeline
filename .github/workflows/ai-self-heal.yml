@@ -180,14 +180,25 @@ jobs:
               r"network is unreachable|connection aborted|queued"
           )
           # Missing artifacts and application failures must never be retried as transient errors.
-          missing_mp4 = bool(re.search(r"no mp4 was found|mp4.{0,80}(missing|not found)|no such file.*\.mp4|output.{0,80}(empty|missing)", logs, re.I))
-          fatal_markers = bool(re.search(r"Traceback \(most recent call last\)|SystemExit:|RuntimeError:|ModuleNotFoundError|ImportError|No space left on device|permission denied", logs, re.I))
+          concat_list_bug = bool(re.search(
+              r"scene_\\d+\\.mp3nfile|Impossible to open.*\\.mp3nfile|Error opening input file output/work/voice_concat\\.txt",
+              logs, re.I
+          ))
+          missing_mp4 = bool(re.search(r"no mp4 was found|mp4.{0,80}(missing|not found)|no such file.*\\.mp4|output.{0,80}(empty|missing)", logs, re.I))
+          fatal_markers = bool(re.search(r"Traceback \\(most recent call last\\)|SystemExit:|RuntimeError:|ModuleNotFoundError|ImportError|No space left on device|permission denied|CalledProcessError", logs, re.I))
           transient = bool(re.search(transient_pattern, logs, re.I)) and not missing_mp4 and not fatal_markers
-          diagnosis = {
-              "category": "configuration" if missing_mp4 else ("transient" if transient else "unknown"),
-              "summary": "Kaggle output download completed without an MP4 artifact; inspect notebook output paths and artifact publishing." if missing_mp4 else ("Verified transient service/network error pattern." if transient else "Needs code-level diagnosis."),
-              "patch": ""
-          }
+          if concat_list_bug:
+              diagnosis = {
+                  "category": "code_bug",
+                  "summary": "Kaggle failed during audio assembly: voice_concat.txt contained literal backslash-n characters, joining scene filenames (for example scene_01.mp3nfile). FFmpeg could not read the scene audio, so no final MP4 was produced. The newline-writing bug has now been corrected in generate.py.",
+                  "patch": ""
+              }
+          else:
+              diagnosis = {
+                  "category": "configuration" if missing_mp4 else ("transient" if transient else "unknown"),
+                  "summary": "Kaggle output download completed without an MP4 artifact; inspect notebook output paths and artifact publishing." if missing_mp4 else ("Verified transient service/network error pattern." if transient else "Needs code-level diagnosis."),
+                  "patch": ""
+              }
 
           key = os.environ.get("GEMINI_API_KEY", "")
           if key:
@@ -225,7 +236,7 @@ jobs:
                   r.raise_for_status()
                   raw = r.json()["candidates"][0]["content"]["parts"][0]["text"]
                   ai = json.loads(raw)
-                  if (not missing_mp4) and ai.get("category") in {
+                  if (not missing_mp4) and (not concat_list_bug) and ai.get("category") in {
                       "transient", "code_bug", "dependency", "configuration",
                       "missing_secret", "permission", "unknown"
                   }:
