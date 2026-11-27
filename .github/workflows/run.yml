@@ -101,20 +101,23 @@ jobs:
               if feedback_text else ""
           )
           prompt = f"""
-          Create an accurate vertical 9:16 educational documentary Short.
+          Create an accurate vertical 9:16 educational explainer Short in a polished 3D CARTOON ANIMATION style.
           {topic_instruction}
           Return ONLY JSON with topic,title,voiceover,scenes. scenes must contain 6–9 objects:
-          {{"topic":"...","title":"...","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"English cinematic 3D CGI prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
+          {{"topic":"...","title":"...","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"Detailed English 3D cartoon animation prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
           Each scene must include mode, visual_prompt, tts_text and caption_text.
-          tts_text MUST be natural spoken Hindi in Devanagari only. Transliterate English technical terms and names naturally into Devanagari; avoid Roman Hindi.
+          tts_text MUST be natural spoken Hindi in Devanagari only. Use a natural Hindi male narration style; write technical terms in Devanagari pronunciation, while keeping the explanation scientifically precise.
           caption_text MUST be clean Hinglish/Roman Hindi, short and faithful to tts_text.
-          Scene tts_text fields combined are the complete narration and must flow naturally.
+          Scene tts_text fields combined are the complete narration and must flow naturally, with each sentence explaining exactly what its own scene shows.
           Use mode="map" ONLY for countries, cities, borders, geographic locations, travel, shipping or trade routes. All science, engineering, technology, history, machines, forts, vehicles and concepts use mode="render".
           Map scenes require map_center [latitude,longitude], map_zoom integer 3–12, and route_points as [latitude,longitude] pairs when showing a route; otherwise [].
-          Render scenes require detailed premium photorealistic 3D documentary CGI prompts, realistic materials, lighting, scale and one simple visible action. No generated text, labels, logos or watermarks.
-          Keep connected scenes consistent in object geometry, materials and location. Explain mechanisms in causal order and obey real physics.
-          Total narration about 100–125 Hindi words. No filler, repeated visuals, impossible physics or unsupported claims.
-          Return JSON only, without Markdown fences.
+          For engineering and machine topics, teach the actual construction and working in a clear sequence: first show the complete machine, then reveal a technically correct cutaway or exploded view, then show each important component in its real position, then animate the mechanism in causal order, and finally show the resulting motion/output. Name the exact component in the narration and make that component clearly visible on screen at that moment. Never substitute generic machinery, unrelated vehicles, decorative shots or random science imagery.
+          For every scene, describe ONE specific subject, its exact visible component, ONE meaningful mechanical action, and the camera framing. Make the action visibly demonstrate the sentence being narrated. Show real cause and effect (for example, air entering, compressor blades rotating, pressure rising, fuel burning, turbine turning a shaft, and exhaust producing thrust).
+          Maintain one consistent model design across all connected scenes: same shape, proportions, colors, materials, component arrangement, environment and cartoon rendering style. Reuse the same visual design description in every connected scene. Do not redesign the machine between shots.
+          Visual style: premium polished 3D educational cartoon animation, appealing rounded forms but accurate engineering geometry, clean readable silhouettes, rich but controlled colors, soft studio lighting, expressive motion, smooth continuous animation and clear educational staging. This is CARTOON animation, not photorealistic CGI, live action, anime, slideshow or still-image montage.
+          Use cutaway views, transparent sections or exploded parts only when they help explain real construction. Keep components physically connected and in correct positions. Airflow, fluids, heat and moving parts must be animated in the correct direction. No impossible physics.
+          No generated words, labels, captions, logos or watermarks. Do not describe anything that is not visible. No filler, repeated scenes, unrelated footage or vague prompts such as "technology in action".
+          Total narration about 100–125 Hindi words. Return JSON only, without Markdown fences.
           {feedback_instruction}
           """
           client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
@@ -143,10 +146,10 @@ jobs:
                       )
                       data = json.loads(response.text.strip())
                       audit_prompt = (
-                          "Fact-check science, engineering, history and geography. Preserve keys topic,title,voiceover,scenes "
+                          "Fact-check science, engineering, history and geography. Verify every scene visual actually illustrates its narration, that machine parts are arranged correctly, that connected scenes retain one identical model design, and that the output is polished 3D cartoon animation rather than photorealistic CGI. Preserve keys topic,title,voiceover,scenes "
                           "and each scene object keys mode,visual_prompt,tts_text,caption_text,map_center,map_zoom,route_points. "
                           "Keep tts_text in Devanagari Hindi and caption_text in Roman Hinglish. Use map only for explicit geographic scenes. "
-                          "Correct inaccurate claims, physical mechanisms, scene continuity and map coordinates. Return corrected JSON only. Draft: "
+                          "Correct inaccurate claims, physical mechanisms, scene-to-narration mismatches, machine construction, scene continuity, cartoon style consistency and map coordinates. Remove generic or unrelated visuals. Return corrected JSON only. Draft: "
                           + json.dumps(data, ensure_ascii=False)
                       )
                       audited = client.models.generate_content(
