@@ -456,9 +456,12 @@ jobs:
               subprocess.run(["git", "commit", "-m", "Record submitted Kaggle explainer job"], check=True)
               branch = os.environ.get("GITHUB_REF_NAME", "jee-telegram-quiz")
               # Keep runtime story.json and other generated files out of the rebase.
+              old_stash = subprocess.run(["git", "rev-parse", "-q", "--verify", "refs/stash"], capture_output=True, text=True).stdout.strip()
               stash = subprocess.run(["git", "stash", "push", "--include-untracked", "-m", "preserve-runtime-files-before-job-record-push"])
               if stash.returncode != 0:
                   raise SystemExit("Could not safely stash runtime files before syncing the job record.")
+              new_stash = subprocess.run(["git", "rev-parse", "-q", "--verify", "refs/stash"], capture_output=True, text=True).stdout.strip()
+              created_stash = bool(new_stash and new_stash != old_stash)
               pushed = False
               try:
                   for attempt in range(5):
@@ -474,9 +477,10 @@ jobs:
                   if not pushed:
                       raise SystemExit("Could not push Kaggle job record after 5 attempts.")
               finally:
-                  restore = subprocess.run(["git", "stash", "pop"])
-                  if restore.returncode != 0:
-                      print("WARNING: runtime-file stash could not be cleanly restored; inspect git status.")
+                  if created_stash:
+                      restore = subprocess.run(["git", "stash", "pop"])
+                      if restore.returncode != 0:
+                          print("WARNING: runtime-file stash could not be cleanly restored; inspect git status.")
               print(f"Recorded submitted Kaggle job for: {topic}")
           PY
 
