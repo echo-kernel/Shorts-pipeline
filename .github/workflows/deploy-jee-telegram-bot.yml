@@ -148,6 +148,9 @@ jobs:
               {"command":"progress","description":"Show your quiz performance"},
               {"command":"mistakes","description":"Review recent wrong answers"},
               {"command":"coverage","description":"Show verified PYQ bank coverage"},
+              {"command":"video","description":"Request a new educational AI video"},
+              {"command":"fix","description":"Diagnose and repair a failed video workflow"},
+              {"command":"remake","description":"Request a video quality remake"},
               {"command":"youtube","description":"Upload generated videos to YouTube"},
               {"command":"help","description":"Show bot instructions"}
             ]}'
