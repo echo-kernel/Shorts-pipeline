@@ -433,7 +433,7 @@ async def create_voice(text, filename, scene_number):
                 filename.unlink()
             pipeline = get_kokoro_pipeline()
             chunks = []
-            for _, _, audio in pipeline(text, voice=voice, speed=1.0, split_pattern=r"\\n+"):
+            for _, _, audio in pipeline(text, voice=voice, speed=1.0, split_pattern=r"\n+"):
                 if audio is None:
                     continue
                 if hasattr(audio, "detach"):
