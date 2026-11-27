@@ -59,6 +59,7 @@ subprocess.run([
     sys.executable, "-m", "pip", "install", "-q",
     "diffusers==0.43.0",
     "accelerate",
+    "--upgrade",
     "edge-tts",
     "requests",
     "geopandas",
