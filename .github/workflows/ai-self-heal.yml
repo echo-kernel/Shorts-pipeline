@@ -78,7 +78,7 @@ jobs:
               candidates.raise_for_status()
               runs = candidates.json().get("workflow_runs", [])
               if not runs:
-                  telegram("No failed AI Explainer Shorts Pipeline run found for video #" + manual_video + " on branch " + branch + ". No new video was generated.")
+                  print("No failed AI Explainer Shorts Pipeline run found for video #" + manual_video + " on branch " + branch + ". No new video was generated.")
                   sys.exit(0)
               selected = runs[0]
               run_id = int(selected["id"])
