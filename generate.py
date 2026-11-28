@@ -584,7 +584,7 @@ def create_clips(scenes, target_duration):
             from visual_engine import render_map_scene
             render_map_scene(scene, output, scene_duration)
         else:
-            generate_video(prompt=scene["visual_prompt"], output_path=output, duration=scene_duration)
+            generate_video(prompt=scene["visual_prompt"], output_path=output, duration=scene_duration, visual_style=scene.get("visual_style", "cartoon"))
             from visual_engine import apply_cinematic_camera
             apply_cinematic_camera(output, scene_duration)
         clips.append(output)
