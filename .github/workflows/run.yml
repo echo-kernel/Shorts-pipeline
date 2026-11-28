@@ -189,7 +189,7 @@ jobs:
               if feedback_text else ""
           )
           prompt = f"""
-          Create an accurate vertical 9:16 educational explainer Short in a polished 3D CARTOON ANIMATION style.
+          Create an accurate vertical 9:16 educational explainer Short. Choose visual style by subject: History must use photorealistic live-action documentary reconstruction with period-accurate people, clothing, architecture and environments; Science, Engineering, Technology, Transport and Space should use polished 3D educational cartoon animation; Architecture should use realistic cinematic architectural visualization unless the topic is historical, in which case use documentary reconstruction.
           {topic_instruction}
           Return ONLY JSON with topic,title,section,voiceover,scenes. section must be exactly one of: Science, Engineering, Technology, Transport, History, Architecture, Space, General. Choose the best single section for the main subject. scenes must contain 6–9 objects:
           {{"topic":"...","title":"...","section":"Engineering","voiceover":"...","scenes":[{{"mode":"render","visual_prompt":"Detailed English 3D cartoon animation prompt","tts_text":"शुद्ध देवनागरी हिंदी में बोला जाने वाला वाक्य।","caption_text":"Clean Hinglish subtitle","map_center":[20.5937,78.9629],"map_zoom":5,"route_points":[]}}]}}
@@ -202,7 +202,7 @@ jobs:
           For engineering and machine topics, teach the actual construction and working in a clear sequence: first show the complete machine, then reveal a technically correct cutaway or exploded view, then show each important component in its real position, then animate the mechanism in causal order, and finally show the resulting motion/output. Name the exact component in the narration and make that component clearly visible on screen at that moment. Never substitute generic machinery, unrelated vehicles, decorative shots or random science imagery.
           For every scene, describe ONE specific subject, its exact visible component, ONE meaningful mechanical action, and the camera framing. Make the action visibly demonstrate the sentence being narrated. Show real cause and effect (for example, air entering, compressor blades rotating, pressure rising, fuel burning, turbine turning a shaft, and exhaust producing thrust).
           Maintain one consistent model design across all connected scenes: same shape, proportions, colors, materials, component arrangement, environment and cartoon rendering style. Reuse the same visual design description in every connected scene. Do not redesign the machine between shots.
-          Visual style: premium polished 3D educational cartoon animation, appealing rounded forms but accurate engineering geometry, clean readable silhouettes, rich but controlled colors, soft studio lighting, expressive motion, smooth continuous animation and clear educational staging. This is CARTOON animation, not photorealistic CGI, live action, anime, slideshow or still-image montage.
+          Visual style must match the chosen section. For History: photorealistic live-action historical documentary reconstruction, period-accurate faces, clothing, architecture, objects and landscapes; natural human proportions, cinematic natural lighting and realistic camera movement; never cartoon, anime or game-like. For Science, Engineering, Technology, Transport and Space: premium polished 3D educational cartoon animation with accurate geometry, clean silhouettes, controlled colors, soft studio lighting and clear educational staging. For Architecture: realistic cinematic architectural visualization, unless the subject is a historical event/person, which must use the History documentary treatment. Do not mix styles within one video.
           Use cutaway views, transparent sections or exploded parts only when they help explain real construction. Keep components physically connected and in correct positions. Airflow, fluids, heat and moving parts must be animated in the correct direction. No impossible physics.
           No generated words, labels, captions, logos or watermarks. Do not describe anything that is not visible. No filler, repeated scenes, unrelated footage or vague prompts such as "technology in action".
           Total narration about 100–125 Hindi words. Return JSON only, without Markdown fences.
@@ -242,6 +242,11 @@ jobs:
               allowed_sections = {"Science", "Engineering", "Technology", "Transport", "History", "Architecture", "Space", "General"}
               section = str(data.get("section", "General")).strip().title()
               data["section"] = section if section in allowed_sections else "General"
+              # Enforce a coherent visual style for the whole video.
+              # Historical subjects use documentary reconstruction; technical topics
+              # retain the existing 3D educational animation treatment.
+              visual_style = "documentary" if data["section"] == "History" else ("realistic" if data["section"] == "Architecture" else "cartoon")
+              data["visual_style"] = visual_style
               scenes = data.get("scenes")
               if not isinstance(scenes, list) or not 6 <= len(scenes) <= 9:
                   raise ValueError(f"{label}: expected 6–9 structured scene objects.")
@@ -255,6 +260,7 @@ jobs:
                           raise ValueError(f"{label}: scene {i} missing {key}.")
                   if scene["mode"] not in ("render", "map"):
                       raise ValueError(f"{label}: scene {i} has invalid mode.")
+                  scene["visual_style"] = visual_style
                   if latin.search(scene["tts_text"]) or not devanagari.search(scene["tts_text"]):
                       raise ValueError(f"{label}: scene {i} narration must be Hindi in Devanagari only.")
                   if devanagari.search(scene["caption_text"]):
