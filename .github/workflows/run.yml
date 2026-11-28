@@ -638,6 +638,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           import re
           import shutil
           from datetime import datetime, timezone
