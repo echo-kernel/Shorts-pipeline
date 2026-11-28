@@ -48,7 +48,7 @@ def load_pipeline():
     _PIPE.enable_model_cpu_offload()
     return _PIPE
 
-def generate_video(prompt, output_path, duration=5, on_retry=None):
+def generate_video(prompt, output_path, duration=5, on_retry=None, visual_style="cartoon"):
     if not prompt or not prompt.strip():
         raise ValueError("Empty scene prompt.")
 
@@ -73,16 +73,20 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
 
     raw_files = []
 
-    # Keep the same framing and design across all generated segments of one scene.
-    # Random angle changes caused visual discontinuity in earlier videos.
+    # All topics use the same unmistakably animated 3D explainer treatment.
+    # Keep the parameter for compatibility, but never switch to live-action styles.
     segment_guidance = (
-        "Premium polished 3D cartoon educational animation, not photorealistic CGI, "
-        "not live action, not anime. Preserve the exact same subject design, proportions, "
-        "colors, component layout, environment and camera framing. One clear continuous "
-        "mechanical action that directly demonstrates the educational prompt. "
-        "Smooth visible motion, clean silhouettes, appealing controlled colors, "
-        "soft studio lighting, physically correct movement. No random objects, "
-        "unrelated machinery, text, labels, logos or watermarks."
+        "Stylized premium 3D animated educational explainer, clearly computer-animated "
+        "and never live-action, photorealistic footage, stock footage or documentary "
+        "reconstruction. Use appealing designed shapes, refined materials, clean silhouettes, "
+        "rich but controlled colors, bright readable cinematic lighting and smooth intentional "
+        "camera movement. The result should feel like a high-quality animated science and "
+        "engineering explainer for a general audience, not a childish toy cartoon and not a "
+        "video game. Keep the same subject identity, geometry, proportions, color palette, "
+        "materials, component layout and environment across adjoining segments. Show only "
+        "the subject and action described by the scene prompt. Use accurate physical "
+        "relationships, clear educational staging and meaningful motion. No unrelated objects, "
+        "no live-action look, no text, labels, logos or watermarks."
     )
 
     print("Generating", clip_count, "unique AI clips...")

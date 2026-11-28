@@ -317,12 +317,12 @@ Return ONLY valid JSON:
 }}
 
 Requirements:
-- Natural Hindi documentary narration.
-- Historically accurate.
+- Natural Hindi narration that is accurate and engaging.
 - Do not invent quotations or events.
-- Four visually different realistic cinematic scenes.
-- Describe clothing, architecture, environment, lighting and camera movement.
-- No modern objects, text, logos, watermarks or fantasy elements.
+- Four visually distinct but stylistically consistent premium 3D animated explainer scenes.
+- Use stylized designed 3D environments and objects, not live-action or photorealistic footage.
+- Bright readable cinematic lighting, attractive controlled colors and smooth camera movement.
+- No unrelated objects, text, logos or watermarks.
 - Vertical 9:16 composition.
 - Return JSON only, without Markdown fences.
 """
@@ -584,7 +584,7 @@ def create_clips(scenes, target_duration):
             from visual_engine import render_map_scene
             render_map_scene(scene, output, scene_duration)
         else:
-            generate_video(prompt=scene["visual_prompt"], output_path=output, duration=scene_duration)
+            generate_video(prompt=scene["visual_prompt"], output_path=output, duration=scene_duration, visual_style=scene.get("visual_style", "cartoon"))
             from visual_engine import apply_cinematic_camera
             apply_cinematic_camera(output, scene_duration)
         clips.append(output)
