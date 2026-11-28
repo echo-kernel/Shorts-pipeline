@@ -48,7 +48,7 @@ def load_pipeline():
     _PIPE.enable_model_cpu_offload()
     return _PIPE
 
-def generate_video(prompt, output_path, duration=5, on_retry=None):
+def generate_video(prompt, output_path, duration=5, on_retry=None, visual_style="cartoon"):
     if not prompt or not prompt.strip():
         raise ValueError("Empty scene prompt.")
 
@@ -73,17 +73,33 @@ def generate_video(prompt, output_path, duration=5, on_retry=None):
 
     raw_files = []
 
-    # Keep the same framing and design across all generated segments of one scene.
-    # Random angle changes caused visual discontinuity in earlier videos.
-    segment_guidance = (
-        "Premium polished 3D cartoon educational animation, not photorealistic CGI, "
-        "not live action, not anime. Preserve the exact same subject design, proportions, "
-        "colors, component layout, environment and camera framing. One clear continuous "
-        "mechanical action that directly demonstrates the educational prompt. "
-        "Smooth visible motion, clean silhouettes, appealing controlled colors, "
-        "soft studio lighting, physically correct movement. No random objects, "
-        "unrelated machinery, text, labels, logos or watermarks."
-    )
+    # Select a visual treatment per topic. History must not inherit the old
+    # universal cartoon/mechanical prompt; science and engineering keep 3D animation.
+    style = str(visual_style or "cartoon").strip().lower()
+    if style in {"documentary", "realistic", "photorealistic"}:
+        segment_guidance = (
+            "Photorealistic live-action historical documentary reconstruction. "
+            "Use natural human anatomy, believable facial features, period-accurate "
+            "clothing, materials, architecture, tools and landscapes appropriate to the "
+            "specific date and region. Natural cinematic lighting, realistic camera optics, "
+            "subtle grounded movement and documentary-grade color. This must look like "
+            "filmed live-action footage, not a 3D cartoon, illustration, anime or game. "
+            "Preserve the same people, clothing, props, location, lighting and camera "
+            "direction across adjoining segments. Continue the exact action described by "
+            "the scene prompt; do not invent machinery or unrelated objects. "
+            "No modern objects, text, labels, logos or watermarks."
+        )
+    else:
+        segment_guidance = (
+            "Premium polished 3D educational cartoon animation, not live action, "
+            "not photorealistic documentary footage and not anime. Preserve the same "
+            "subject design, proportions, colors, materials, environment and camera "
+            "framing across adjoining segments. Show one clear continuous action that "
+            "directly demonstrates the educational scene prompt, with smooth visible "
+            "motion, clean silhouettes, controlled colors, soft studio lighting and "
+            "physically correct movement. Do not introduce unrelated machinery or random "
+            "objects. No text, labels, logos or watermarks."
+        )
 
     print("Generating", clip_count, "unique AI clips...")
     print("Target duration:", duration, "seconds")
