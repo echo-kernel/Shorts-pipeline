@@ -638,20 +638,37 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           import re
           import shutil
           from datetime import datetime, timezone
           from pathlib import Path
 
           root = Path("kaggle-download")
-          candidates = [p for p in root.rglob("*.mp4") if p.is_file()]
-          if not candidates:
-              raise SystemExit("Kaggle output download completed, but no MP4 was found.")
-          preferred = [p for p in candidates if p.name == "historical_short.mp4"]
-          source = preferred[0] if preferred else max(candidates, key=lambda p: p.stat().st_size)
+          expected_paths = [
+              root / "historical_short.mp4",
+              root / "Shorts-pipeline" / "output" / "historical_short.mp4",
+          ]
+          source = next(
+              (path for path in expected_paths if path.is_file()),
+              None,
+          )
+          if source is None:
+              found = sorted(
+                  str(path.relative_to(root))
+                  for path in root.rglob("*.mp4")
+                  if path.is_file()
+              )
+              details = ", ".join(found) if found else "none"
+              raise SystemExit(
+                  "Final historical_short.mp4 is missing. "
+                  "Refusing to publish an intermediate video. "
+                  f"Found MP4 files: {details}"
+              )
+
           size = source.stat().st_size
           if size < 10000:
-              raise SystemExit(f"Downloaded MP4 is too small ({size} bytes): {source}")
+              raise SystemExit(f"Final MP4 is too small ({size} bytes): {source}")
 
           story = json.loads(Path("kaggle/story.json").read_text(encoding="utf-8"))
           topic = str(story.get("topic") or "educational-short")
