@@ -73,33 +73,21 @@ def generate_video(prompt, output_path, duration=5, on_retry=None, visual_style=
 
     raw_files = []
 
-    # Select a visual treatment per topic. History must not inherit the old
-    # universal cartoon/mechanical prompt; science and engineering keep 3D animation.
-    style = str(visual_style or "cartoon").strip().lower()
-    if style in {"documentary", "realistic", "photorealistic"}:
-        segment_guidance = (
-            "Photorealistic live-action historical documentary reconstruction. "
-            "Use natural human anatomy, believable facial features, period-accurate "
-            "clothing, materials, architecture, tools and landscapes appropriate to the "
-            "specific date and region. Natural cinematic lighting, realistic camera optics, "
-            "subtle grounded movement and documentary-grade color. This must look like "
-            "filmed live-action footage, not a 3D cartoon, illustration, anime or game. "
-            "Preserve the same people, clothing, props, location, lighting and camera "
-            "direction across adjoining segments. Continue the exact action described by "
-            "the scene prompt; do not invent machinery or unrelated objects. "
-            "No modern objects, text, labels, logos or watermarks."
-        )
-    else:
-        segment_guidance = (
-            "Premium polished 3D educational cartoon animation, not live action, "
-            "not photorealistic documentary footage and not anime. Preserve the same "
-            "subject design, proportions, colors, materials, environment and camera "
-            "framing across adjoining segments. Show one clear continuous action that "
-            "directly demonstrates the educational scene prompt, with smooth visible "
-            "motion, clean silhouettes, controlled colors, soft studio lighting and "
-            "physically correct movement. Do not introduce unrelated machinery or random "
-            "objects. No text, labels, logos or watermarks."
-        )
+    # All topics use the same unmistakably animated 3D explainer treatment.
+    # Keep the parameter for compatibility, but never switch to live-action styles.
+    segment_guidance = (
+        "Stylized premium 3D animated educational explainer, clearly computer-animated "
+        "and never live-action, photorealistic footage, stock footage or documentary "
+        "reconstruction. Use appealing designed shapes, refined materials, clean silhouettes, "
+        "rich but controlled colors, bright readable cinematic lighting and smooth intentional "
+        "camera movement. The result should feel like a high-quality animated science and "
+        "engineering explainer for a general audience, not a childish toy cartoon and not a "
+        "video game. Keep the same subject identity, geometry, proportions, color palette, "
+        "materials, component layout and environment across adjoining segments. Show only "
+        "the subject and action described by the scene prompt. Use accurate physical "
+        "relationships, clear educational staging and meaningful motion. No unrelated objects, "
+        "no live-action look, no text, labels, logos or watermarks."
+    )
 
     print("Generating", clip_count, "unique AI clips...")
     print("Target duration:", duration, "seconds")
